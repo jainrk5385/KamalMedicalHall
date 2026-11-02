@@ -160,7 +160,10 @@ export function createHttpClient(deps: HttpClientDeps) {
       if (r.status >= 500) deps.logger?.error('server error', { route: `${method} ${path.split('?')[0]}`, status: r.status, requestId });
       const err = (r.data as { error?: { code?: string; message?: string; requestId?: string } } | null)?.error;
       // Server messages are shown for expected (4xx) problems only; for 5xx the details stay in the server logs.
-      const message = r.status >= 500 ? GENERIC_MESSAGES.server : r.status === 429 ? GENERIC_MESSAGES.rateLimited : (typeof err?.message === 'string' && err.message ? err.message : GENERIC_MESSAGES.generic);
+      const isOtpRequest = path.startsWith('/auth/otp/');
+      const message = r.status >= 500
+        ? (isOtpRequest ? GENERIC_MESSAGES.otpUnavailable : GENERIC_MESSAGES.server)
+        : r.status === 429 ? GENERIC_MESSAGES.rateLimited : (typeof err?.message === 'string' && err.message ? err.message : GENERIC_MESSAGES.generic);
       throw new ApiError(r.status, err?.code ?? 'error', message, err?.requestId ?? requestId);
     }
     throw lastError ?? new ApiError(0, 'network', GENERIC_MESSAGES.network, requestId);

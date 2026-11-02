@@ -101,6 +101,18 @@ describe('http client', () => {
     assert.deepEqual(limited.sleeps, [1000], 'honours Retry-After');
   });
 
+  it('shows a phone verification message for OTP server errors without exposing internals', async () => {
+    const { c } = client([{ status: 502, body: { error: { code: 'otp_unavailable', message: 'PearlSMS key rejected: secret-detail' } } }]);
+    await assert.rejects(c.request('POST', '/auth/otp/send', { phone: '9000000000' }, { auth: false, retry: 'never' }), (e: ApiError) => {
+      assert.equal(e.code, 'otp_unavailable');
+      assert.match(e.message, /Phone verification is temporarily unavailable/);
+      assert.doesNotMatch(e.message, /PearlSMS|secret-detail/);
+      return true;
+    });
+    const internal = client([{ status: 500, body: { error: { code: 'internal', message: 'MongoDB connection string leaked' } } }]);
+    await assert.rejects(internal.c.request('POST', '/auth/otp/send', {}, { auth: false, retry: 'never' }), (e: ApiError) => e.status === 500 && /Phone verification is temporarily unavailable/.test(e.message) && !/MongoDB/.test(e.message));
+  });
+
   it('refreshes the token once for many simultaneous 401s, then retries each request', async () => {
     const { c, calls, events } = client((call) => (call.headers.Authorization === 'Bearer new-token' ? { status: 200, body: { ok: true } } : { status: 401, body: { error: { code: 'invalid_token', message: 'expired' } } }));
     const results = await Promise.all([c.request('GET', '/a'), c.request('GET', '/b'), c.request('POST', '/c', {}), c.request('GET', '/d'), c.request('GET', '/e')]);

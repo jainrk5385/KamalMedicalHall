@@ -1,4 +1,5 @@
 import { api } from '../api/client';
+import { ApiError, GENERIC_MESSAGES } from '../core/errors/ApiError';
 import { logger } from '../core/logging';
 import { secure, type OtpProvider } from './devProvider';
 
@@ -51,9 +52,13 @@ export const autoProvider = (firebase: OtpProvider): OtpProvider => {
   return {
     get mode() { return active.mode; },
     async sendOtp(phone, purpose) {
-      let useServer = false;
-      try { useServer = serverOtpModes.includes((await api<{ authMode?: string }>('GET', '/config', undefined, { auth: false, retry: 'never', timeoutMs: AUTH_REQUEST_TIMEOUT_MS })).authMode ?? ''); } catch { /* server unreachable: fall back to Firebase */ }
-      active = useServer ? server : firebase;
+      // The server is the source of truth for production OTP mode. Falling back to
+      // Firebase when this request fails hides backend outages and can misroute a
+      // phone that the server is configured to verify through SMS.
+      const { authMode } = await api<{ authMode?: string }>('GET', '/config', undefined, { auth: false, retry: 'never', timeoutMs: AUTH_REQUEST_TIMEOUT_MS });
+      if (serverOtpModes.includes(authMode ?? '')) active = server;
+      else if (authMode === 'firebase') active = firebase;
+      else throw new ApiError(503, 'auth_mode_unavailable', GENERIC_MESSAGES.otpUnavailable);
       return active.sendOtp(phone, purpose);
     },
     confirmOtp: (code) => active.confirmOtp(code),

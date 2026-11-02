@@ -12,6 +12,7 @@ export const GENERIC_MESSAGES = {
   network: 'Cannot reach the server. Check your internet connection and try again.',
   timeout: 'The server is taking too long to answer. Please try again in a moment.',
   server: 'Something went wrong on our side. Please try again in a moment.',
+  otpUnavailable: 'Phone verification is temporarily unavailable. Please try again in a moment or contact the store.',
   rateLimited: 'Too many requests. Please wait a moment and try again.',
   badResponse: 'The server sent an unexpected answer. Please try again.',
   generic: 'Something went wrong. Please try again.',
