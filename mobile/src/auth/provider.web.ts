@@ -1,7 +1,9 @@
 import { getAuth, RecaptchaVerifier, signInWithCustomToken, signInWithPhoneNumber, signOut, type ConfirmationResult } from 'firebase/auth';
 import { ApiError } from '../api/client';
+import { logger } from '../core/logging';
 import { firebaseWebApp, firebaseWebConfig } from '../firebaseWeb';
 import { devProvider, type OtpProvider } from './devProvider';
+import { firebaseWebSendError } from './firebaseWebErrors';
 import { autoProvider } from './serverProvider';
 
 /**
@@ -21,15 +23,18 @@ const firebaseWebProvider = (): OtpProvider => {
   return {
     mode: 'firebase',
     async sendOtp(phone) {
-      const a = auth();
-      verifier?.clear();
-      verifier = new RecaptchaVerifier(a, holder(), { size: 'invisible' });
       try {
+        const a = auth();
+        verifier?.clear();
+        verifier = new RecaptchaVerifier(a, holder(), { size: 'invisible' });
         confirmation = await signInWithPhoneNumber(a, `+91${phone}`, verifier);
       } catch (e) {
-        verifier.clear(); verifier = null;
-        const code = (e as { code?: string }).code ?? '';
-        throw new ApiError(0, 'send_failed', code === 'auth/too-many-requests' ? 'Too many attempts. Please try again later.' : code === 'auth/invalid-phone-number' ? 'Enter a valid mobile number.' : 'Could not send the OTP. Please try again.');
+        try { verifier?.clear(); } catch { /* the verifier may not have rendered */ }
+        verifier = null;
+        confirmation = null;
+        const mapped = firebaseWebSendError(e);
+        logger.warn('web otp send failed', { code: mapped.code });
+        throw mapped;
       }
     },
     async confirmOtp(code) {
