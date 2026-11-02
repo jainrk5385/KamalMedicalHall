@@ -65,6 +65,14 @@ jobs:
 
             set -e
 
+            # Load NVM and Node.js for non-interactive SSH
+            export NVM_DIR="/home/deploy/.nvm"
+            . "$NVM_DIR/nvm.sh"
+            nvm use 26.13.0
+
+            echo "Node version: $(node -v)"
+            echo "NPM version: $(npm -v)"
+
             cd /home/deploy/apps/KamalMedicalHall
 
             test "$(git branch --show-current)" = "main" || { echo "VPS is not on main branch."; exit 1; }
@@ -82,6 +90,7 @@ jobs:
             for attempt in {1..10}; do
               if curl --fail --silent --show-error \
                 https://api.kamalmedicalhall.com/health; then
+                echo "Backend deployment successful."
                 exit 0
               fi
 
