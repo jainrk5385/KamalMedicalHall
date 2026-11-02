@@ -13,18 +13,20 @@ export function useLoad<T>(fn: () => Promise<T>, events: string[] = []) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const fnRef = useRef(fn);
+  const requestId = useRef(0);
   fnRef.current = fn;
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const reload = useCallback(async () => {
-    if (mounted.current) setError(null);
+    const id = ++requestId.current;
+    if (mounted.current) { setError(null); setLoading(true); }
     try {
       const result = await fnRef.current();
-      if (mounted.current) setData(result);
+      if (mounted.current && id === requestId.current) setData(result);
     } catch (e) {
-      if (mounted.current) setError((e as Error).message);
+      if (mounted.current && id === requestId.current) setError((e as Error).message);
     } finally {
-      if (mounted.current) setLoading(false);
+      if (mounted.current && id === requestId.current) setLoading(false);
     }
   }, []);
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));

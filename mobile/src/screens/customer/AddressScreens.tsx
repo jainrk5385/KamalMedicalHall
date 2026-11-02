@@ -1,7 +1,7 @@
 import { useErrorPopup } from '../../hooks';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Location from 'expo-location';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutLeft, LinearTransition, ZoomIn } from 'react-native-reanimated';
@@ -42,6 +42,7 @@ export function AddressesScreen({ navigation, route }: NativeStackScreenProps<Cu
   if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   return (
     <Screen footer={select ? <Button title={t('address.chooseTime')} icon="arrow-forward" disabled={!list.length || !selected} onPress={() => goTo(navigation, 'DeliveryTime')} /> : undefined}>
+      {error ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : null}
       {select ? <Enter><CheckoutSteps step={0} labels={[t('steps.address'), t('steps.time'), t('steps.review')]} /></Enter> : null}
       {!list.length ? <View style={{ height: 260 }}><Message icon="location-outline" title={t('address.emptyTitle')} text={t('address.empty')} /></View> : null}
       {list.map((a, i) => {
@@ -80,6 +81,8 @@ export function AddressFormScreen({ navigation, route }: NativeStackScreenProps<
   const user = useSession((st) => st.user);
   const setAddress = useCart((st) => st.setAddress);
   const [loaded, setLoaded] = useState(!id);
+  const [loadError, setLoadError] = useState('');
+  const [addressMissing, setAddressMissing] = useState(false);
   const [f, setF] = useState({ label: 'home' as Address['label'], recipientName: user?.name ?? '', phone: user?.phone ?? '', line1: '', line2: '', landmark: '', pincode: '' });
   const [coords, setCoords] = useState<{ latitude?: number; longitude?: number }>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -96,14 +99,21 @@ export function AddressFormScreen({ navigation, route }: NativeStackScreenProps<
   const pinRef = useRef<TextInput>(null);
   const set = (k: keyof typeof f) => (v: string) => { setF((c) => ({ ...c, [k]: v })); setErrors((e) => ({ ...e, [k]: '' })); };
 
-  useEffect(() => {
+  const loadAddress = useCallback(async () => {
     if (!id) return;
-    void endpoints.addresses().then(({ addresses }) => {
+    setLoaded(false); setLoadError(''); setAddressMissing(false);
+    try {
+      const { addresses } = await endpoints.addresses();
       const a = addresses.find((x) => x.id === id);
-      if (a) setF({ label: a.label, recipientName: a.recipientName, phone: a.phone, line1: a.line1, line2: a.line2 ?? '', landmark: a.landmark ?? '', pincode: a.pincode });
-      setLoaded(true);
-    }).catch(() => setLoaded(true));
-  }, [id]);
+      if (!a) { setAddressMissing(true); setLoadError(t('address.loadMissing')); return; }
+      setF({ label: a.label, recipientName: a.recipientName, phone: a.phone, line1: a.line1, line2: a.line2 ?? '', landmark: a.landmark ?? '', pincode: a.pincode });
+      setCoords({ latitude: a.latitude ?? undefined, longitude: a.longitude ?? undefined });
+    } catch (e) {
+      setLoadError((e as Error).message || t('address.loadFailed'));
+    } finally { setLoaded(true); }
+  }, [id, t]);
+
+  useEffect(() => { void loadAddress(); }, [loadAddress]);
 
   const useGps = async () => {
     setGpsBusy(true); setGpsError('');
@@ -140,6 +150,7 @@ export function AddressFormScreen({ navigation, route }: NativeStackScreenProps<
   };
 
   if (!loaded) return <View style={{ padding: spacing.lg, gap: 14 }}><Skeleton h={44} /><Skeleton h={52} r={12} /><Skeleton h={52} r={12} /><Skeleton h={52} r={12} /></View>;
+  if (id && loadError) return <ErrorView message={loadError} onRetry={() => { if (addressMissing) navigation.goBack(); else void loadAddress(); }} retryLabel={addressMissing ? t('common.back') : t('common.retry')} />;
   return (
     <Screen footer={<Button title={t('address.save')} icon="checkmark" onPress={save} loading={busy} />}>
       <Enter index={0}>

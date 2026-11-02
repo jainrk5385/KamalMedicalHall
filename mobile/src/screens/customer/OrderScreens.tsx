@@ -3,14 +3,14 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import { Image, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, ZoomIn, interpolate, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { endpoints } from '../../api/endpoints';
-import type { Order, OrderStatus, PaymentMethod } from '../../api/types';
+import type { Order, OrderStatus, OrderSummary, PaymentMethod } from '../../api/types';
 import { openFile } from '../../components/FileViewer';
 import { OrderCard } from '../../components/OrderCard';
 import { CountUp, Enter, Ripples, Skeleton, Tap, tick, useShake } from '../../components/motion';
@@ -46,9 +46,34 @@ export function OrdersScreen(_p: BottomTabScreenProps<CustomerTabParamList, 'Ord
   const customBad = preset === 'custom' && !!from && !!to && from > to;
   const range = preset === 'today' ? { from: istDate(), to: istDate() } : preset === '7d' ? { from: istDate(-6) } : preset === '30d' ? { from: istDate(-29) } : preset === 'custom' && !customBad ? { from: from ?? undefined, to: to ?? undefined } : undefined;
   const key = `${tab}|${range?.from ?? ''}|${range?.to ?? ''}`;
-  const { data, error, loading, reload } = useLoad(() => endpoints.orders(tab, 0, range), ['order:update']);
+  const requestKey = key;
+  const { data: loadedData, error, loading, reload } = useLoad(async () => ({ ...(await endpoints.orders(tab, 0, range)), requestKey }), ['order:update']);
+  const data = loadedData?.requestKey === key ? loadedData : null;
+  const [olderOrders, setOlderOrders] = useState<OrderSummary[]>([]);
+  const [hasMoreAfterPage, setHasMoreAfterPage] = useState<boolean | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [olderError, setOlderError] = useState('');
+  const pageGeneration = useRef(0);
   useEffect(() => { void reload(); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+  useEffect(() => { pageGeneration.current += 1; setOlderOrders([]); setHasMoreAfterPage(null); setOlderError(''); }, [data, key]);
+  const orders = [...(data?.orders ?? []), ...olderOrders];
+  const hasMore = hasMoreAfterPage ?? Boolean(data?.hasMore);
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    const generation = pageGeneration.current;
+    setLoadingMore(true); setOlderError('');
+    try {
+      const page = await endpoints.orders(tab, orders.length, range);
+      if (generation !== pageGeneration.current) return;
+      setOlderOrders((current) => {
+        const known = new Set([...(data?.orders ?? []), ...current].map((o) => o.id));
+        return [...current, ...page.orders.filter((o) => !known.has(o.id))];
+      });
+      setHasMoreAfterPage(page.hasMore);
+    } catch (e) { if (generation === pageGeneration.current) setOlderError((e as Error).message); }
+    finally { setLoadingMore(false); }
+  };
   const filtered = !key.endsWith('||');
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.white }} edges={['top']}>
@@ -79,11 +104,14 @@ export function OrdersScreen(_p: BottomTabScreenProps<CustomerTabParamList, 'Ord
         ) : null}
         {customBad ? <Text style={[type.small, { color: colors.red, paddingHorizontal: spacing.lg }]}>{t('orders.dateInvalid')}</Text> : null}
       </View>
-      {loading && !data?.orders.length ? <ListSkeleton /> : error && !data ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : !data?.orders.length ? (
+      {loading && !data?.orders.length ? <ListSkeleton /> : error && !data ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : error && !orders.length ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : !orders.length ? (
         <Message icon={tab === 'active' ? 'time-outline' : tab === 'completed' ? 'receipt-outline' : 'close-circle-outline'} title={filtered ? t('orders.noMatchTitle') : t(`orders.empty_${tab}`)} text={filtered ? t('orders.noMatch') : t(`orders.emptyHelp_${tab}`)} />
       ) : (
         <ScrollView contentContainerStyle={[{ padding: spacing.lg, paddingBottom: spacing.xxxl }, content]} refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={reload} tintColor={colors.primary} />} showsVerticalScrollIndicator={false}>
-          <ResponsiveGrid>{data.orders.map((o, i) => <OrderCard key={o.id} order={o} index={i} onPress={() => nav.navigate('OrderDetail', { orderId: o.id })} />)}</ResponsiveGrid>
+          {error ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : null}
+          <ResponsiveGrid>{orders.map((o, i) => <OrderCard key={o.id} order={o} index={i} onPress={() => nav.navigate('OrderDetail', { orderId: o.id })} />)}</ResponsiveGrid>
+          {olderError ? <ErrorView message={olderError} onRetry={() => { void loadMore(); }} retryLabel={t('common.retry')} /> : null}
+          {hasMore ? <Button title={loadingMore ? t('orders.loadingMore') : t('orders.loadMore')} variant="outline" onPress={() => { void loadMore(); }} loading={loadingMore} disabled={loadingMore} style={{ marginTop: spacing.md }} /> : null}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -171,7 +199,7 @@ export function OrderDetailScreen({ navigation, route }: NativeStackScreenProps<
   useErrorPopup(err);
   const [errCount, setErrCount] = useState(0);
   if (loading && !data) return <DetailSkeleton />;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const o = data!.order;
   const idx = stepIndex(o.status);
   const canCancel = ['requested', 'quoted', 'accepted', 'awaiting_payment', 'ready_to_dispatch'].includes(o.status);
@@ -338,20 +366,22 @@ export function PaymentScreen({ navigation, route }: NativeStackScreenProps<Cust
   const { t } = useTranslation();
   const phone = useSession((st) => st.user?.phone);
   const { data, error, loading, reload } = useLoad(() => endpoints.order(route.params.orderId));
-  const [method, setMethod] = useState<PaymentMethod>('razorpay');
+  const [method, setMethod] = useState<PaymentMethod>(Platform.OS === 'web' ? 'cod' : 'razorpay');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   useErrorPopup(err);
   if (loading && !data) return <DetailSkeleton />;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const o: Order = data!.order;
 
   const pay = async () => {
     setBusy(true); setErr('');
     try {
+      // Do not create an awaiting-payment order on web: the native Razorpay SDK
+      // is unavailable there, and this check must happen before acceptQuote.
+      if (method === 'razorpay' && Platform.OS === 'web') throw new Error(t('pay.webUnsupported'));
       const res = await endpoints.acceptQuote(o.id, method);
       if (method === 'razorpay' && res.razorpay) {
-        if (Platform.OS === 'web') throw new Error(t('pay.webUnsupported'));
         const Razorpay = (require('react-native-razorpay') as { default: { open(o: object): Promise<{ razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }> } }).default;
         let result;
         try {
@@ -383,7 +413,7 @@ export function PaymentScreen({ navigation, route }: NativeStackScreenProps<Cust
           <View style={s.row}><Icon name="bicycle" size={16} color={colors.green} /><Text style={[type.small, { color: colors.green }]}>{t('cart.freeDelivery')}</Text></View>
         </LinearGradient>
       </Enter>
-      <Enter index={1}><PayOption selected={method === 'razorpay'} icon="card" title={t('pay.razorpay')} sub={t('pay.razorpaySub')} onPress={() => setMethod('razorpay')} /></Enter>
+      {Platform.OS !== 'web' ? <Enter index={1}><PayOption selected={method === 'razorpay'} icon="card" title={t('pay.razorpay')} sub={t('pay.razorpaySub')} onPress={() => setMethod('razorpay')} /></Enter> : null}
       <Enter index={2}><PayOption selected={method === 'cod'} icon="cash" title={t('pay.cod')} sub={t('pay.codSub')} onPress={() => setMethod('cod')} /></Enter>
       {err ? <Animated.Text entering={FadeIn.duration(250)} style={[type.small, { color: colors.red, marginTop: spacing.md }]}>{err}</Animated.Text> : null}
     </Screen>

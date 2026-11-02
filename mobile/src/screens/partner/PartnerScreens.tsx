@@ -64,6 +64,7 @@ export function PartnerHomeScreen(_p: BottomTabScreenProps<PartnerTabParamList, 
   const [err, setErr] = useState('');
   useErrorPopup(err);
   const [busy, setBusy] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const state = me.data?.state ?? 'off';
   const { coords, denied } = usePartnerLocation(state === 'busy' || state === 'returning', () => { void me.reload(); });
 
@@ -77,7 +78,11 @@ export function PartnerHomeScreen(_p: BottomTabScreenProps<PartnerTabParamList, 
   const active = all.filter((o) => !pending.includes(o));
   const cash = active.filter((o) => o.paymentMethod === 'cod').reduce((sum, o) => sum + (o.quotedAmount ?? 0), 0);
   const toShop = me.data!.store && coords ? distanceMeters(coords, me.data!.store) : null;
-  const refresh = () => { void me.reload(); void jobs.reload(); void delivered.reload(); };
+  const refresh = async () => {
+    setRefreshing(true);
+    try { await Promise.all([me.reload(), jobs.reload(), delivered.reload()]); }
+    finally { setRefreshing(false); }
+  };
 
   const choose = async (status: DutyStatus) => {
     setErr('');
@@ -107,7 +112,7 @@ export function PartnerHomeScreen(_p: BottomTabScreenProps<PartnerTabParamList, 
 
   return (
     <SafeAreaView style={s.fill} edges={['top']}>
-      <ScrollView contentContainerStyle={[s.pad, content]} refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} tintColor={colors.primary} />} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[s.pad, content]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh(); }} tintColor={colors.primary} />} showsVerticalScrollIndicator={false}>
         <Enter index={0}>
           <View style={s.greet}>
             <Avatar name={user?.name} size={48} />
@@ -123,6 +128,7 @@ export function PartnerHomeScreen(_p: BottomTabScreenProps<PartnerTabParamList, 
               <Text style={[type.small, { color: colors.secondary }]}>{t(ui.help)}</Text>
             </View>
           </LinearGradient>
+          {me.error ? <ErrorView message={me.error} onRetry={me.reload} retryLabel={t('common.retry')} /> : null}
           {me.data!.storeOpen === false ? <View style={s.closedBanner}><Icon name="storefront" size={18} color={colors.amber} /><Text style={[type.small, { color: colors.text, flex: 1 }]}>{t('partner.storeClosedBanner')}</Text></View> : null}
           <View style={s.dutyCard}>
             <View style={s.dutyHead}>
@@ -166,6 +172,7 @@ export function PartnerHomeScreen(_p: BottomTabScreenProps<PartnerTabParamList, 
             <View style={s.stat}><CountUp value={cash} prefix="₹" style={[type.h2, { color: colors.text }]} /><Text style={[type.small, { color: colors.secondary }]}>{t('partner.cashToCollect')}</Text></View>
           </View>
         </Enter>
+        {delivered.error ? <ErrorView message={delivered.error} onRetry={delivered.reload} retryLabel={t('common.retry')} /> : null}
 
         {pending.length > 0 ? <>
           <Enter index={4}><Text style={[type.h3, s.sec]}>{t('partner.newRequests')}</Text></Enter>
@@ -187,7 +194,8 @@ export function PartnerHomeScreen(_p: BottomTabScreenProps<PartnerTabParamList, 
         </> : null}
 
         <Enter index={6}><Text style={[type.h3, s.sec]}>{t('partner.activeDeliveries')}</Text></Enter>
-        {jobs.data && !active.length ? <Enter index={7}><Card style={s.empty}><Icon name="cube-outline" size={30} color={colors.muted} /><Text style={[type.body, { color: colors.secondary, flex: 1 }]}>{t('partner.noJobs')}</Text></Card></Enter> : null}
+        {jobs.error ? <ErrorView message={jobs.error} onRetry={jobs.reload} retryLabel={t('common.retry')} /> : null}
+        {jobs.data && !jobs.error && !active.length ? <Enter index={7}><Card style={s.empty}><Icon name="cube-outline" size={30} color={colors.muted} /><Text style={[type.body, { color: colors.secondary, flex: 1 }]}>{t('partner.noJobs')}</Text></Card></Enter> : null}
         {active.map((o, i) => <OrderCard key={o.id} order={o} index={i + 7} onPress={() => nav.navigate('Job', { orderId: o.id })} subtitle={`${o.customerName ?? ''}${o.deliverySlot ? ` · ${o.deliverySlot}` : ''}`} />)}
 
         <Enter index={12}>
@@ -206,7 +214,8 @@ export function PartnerOrdersScreen(_p: BottomTabScreenProps<PartnerTabParamList
   const nav = useNavigation<Nav>();
   const content = useContentStyle();
   const [tab, setTab] = useState<'delivered' | 'rejected'>('delivered');
-  const { data, error, loading, reload } = useLoad(() => endpoints.partner.orders(tab), ['order:update']);
+  const { data: loadedData, error, loading, reload } = useLoad(async () => ({ ...(await endpoints.partner.orders(tab)), requestTab: tab }), ['order:update']);
+  const data = loadedData?.requestTab === tab ? loadedData : null;
   useEffect(() => { void reload(); }, [tab, reload]);
   return (
     <SafeAreaView style={s.fill} edges={['top']}>
@@ -219,10 +228,11 @@ export function PartnerOrdersScreen(_p: BottomTabScreenProps<PartnerTabParamList
           </Tap>
         ))}
       </View>
-      {loading && !data ? <ListSkeleton /> : error && !data ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : !data?.orders.length ? (
+      {loading && !data ? <ListSkeleton /> : error && !data ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : error && !data?.orders.length ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : !data?.orders.length ? (
         <Message icon={tab === 'delivered' ? 'checkmark-done-circle-outline' : 'close-circle-outline'} title={t(`partner.empty_${tab}`)} text={t(`partner.emptyHelp_${tab}`)} />
       ) : (
-        <ScrollView contentContainerStyle={[s.pad, content]} refreshControl={<RefreshControl refreshing={false} onRefresh={reload} tintColor={colors.primary} />} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[s.pad, content]} refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={reload} tintColor={colors.primary} />} showsVerticalScrollIndicator={false}>
+          {error ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : null}
           {data.orders.map((o, i) => tab === 'delivered'
             ? <OrderCard key={o.id} order={o} index={i} onPress={() => nav.navigate('Job', { orderId: o.id })} subtitle={`${o.customerName ?? ''}${o.paymentMethod === 'cod' && o.quotedAmount != null ? ` · ${t('pay.cod')} ${formatMoney(o.quotedAmount)}` : ''}`} />
             : (
@@ -261,7 +271,7 @@ export function JobScreen({ navigation, route }: NativeStackScreenProps<PartnerS
   const [reading, setReading] = useState(false);
   const [readNote, setReadNote] = useState<'' | 'read' | 'missing'>('');
   if (loading && !data) return <ListSkeleton />;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const o: Order = data!.order;
   const cod = o.paymentMethod === 'cod';
   const a = o.address;
@@ -289,6 +299,7 @@ export function JobScreen({ navigation, route }: NativeStackScreenProps<PartnerS
       if (res.canceled || !res.assets?.[0]) return;
       const a = res.assets[0];
       setProof({ uri: a.uri, name: a.fileName ?? `payment-${o.orderNumber}.jpg`, mimeType: a.mimeType ?? 'image/jpeg', sizeBytes: a.fileSize });
+      setRef(''); // A transaction ID from the previous screenshot must never be submitted with this one.
       setReading(true);
       try {
         const TextRecognition = (require('@react-native-ml-kit/text-recognition') as { default: { recognize(uri: string): Promise<{ text: string }> } }).default;
@@ -421,7 +432,7 @@ export function MyAttendanceScreen() {
   const { t } = useTranslation();
   const { data, error, loading, reload } = useLoad(() => endpoints.partner.attendance(14), ['partner:update', 'notification']);
   if (loading && !data) return <ListSkeleton />;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const a = data!;
   const clock = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '');
   const tiles = [

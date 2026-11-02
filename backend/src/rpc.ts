@@ -40,6 +40,11 @@ const clientIp = (socket: Socket) => {
 
 const firstHeader = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)?.split(',')[0]?.trim();
 
+/** Match the loopback address family to the address family used by the listener. */
+export function loopbackHostFor(address: Pick<AddressInfo, 'family'>): string {
+  return address.family === 'IPv6' ? '::1' : '127.0.0.1';
+}
+
 /**
  * The address the app reached us on, so links the API builds from the request (invoice PDF, CSV exports) point at the
  * public server and not at the loopback hop (127.0.0.1), which a phone cannot open.
@@ -61,7 +66,7 @@ function loopback(server: http.Server, method: string, path: string, headers: Re
   return new Promise((resolve, reject) => {
     const address = server.address() as AddressInfo | null;
     if (!address || typeof address === 'string') return reject(new Error('server is not listening'));
-    const req = http.request({ host: '127.0.0.1', port: address.port, method, path, headers, agent, timeout: 60_000 }, (res) => {
+    const req = http.request({ host: loopbackHostFor(address), port: address.port, method, path, headers, agent, timeout: 60_000 }, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
       res.on('data', (c: Buffer) => { size += c.length; if (size > MAX_REPLY_BYTES) req.destroy(new Error('reply too large')); else chunks.push(c); });
@@ -113,8 +118,21 @@ export function attachRpc(socket: Socket, server: http.Server) {
       const h: Record<string, string> = {};
       for (const k of ['retry-after', 'x-request-id', 'server-timing']) { const v = res.headers[k]; if (typeof v === 'string') h[k] = v; }
       reply(res.status, body, h);
-    } catch {
-      error(500, 'internal', 'Something went wrong. Please try again.');
+    } catch (cause) {
+      const requestId = msg.id && /^[\w-]{8,64}$/.test(msg.id) ? msg.id : undefined;
+      console.error(JSON.stringify({
+        level: 'error',
+        msg: 'rpc_loopback_failed',
+        ...(requestId ? { id: requestId } : {}),
+        error: cause instanceof Error ? { name: cause.name, message: cause.message } : String(cause),
+      }));
+      reply(500, {
+        error: {
+          code: 'internal',
+          message: 'Something went wrong. Please try again.',
+          ...(requestId ? { requestId } : {}),
+        },
+      }, requestId ? { 'x-request-id': requestId } : {});
     }
   });
 }

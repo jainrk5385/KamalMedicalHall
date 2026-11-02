@@ -39,6 +39,7 @@ export function ShopScreen() {
 
   return (
     <ScrollView contentContainerStyle={[s.body, content]} refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={reload} tintColor={colors.primary} />} showsVerticalScrollIndicator={false}>
+      {error ? <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} /> : null}
       <LinearGradient colors={[colors.navy, colors.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
         <Text style={[type.h2, { color: colors.white }]}>{d.name ?? t('brand.name')}</Text>
         {d.tagline ? <Text style={[type.body, { color: 'rgba(255,255,255,0.85)' }]}>{d.tagline}</Text> : null}

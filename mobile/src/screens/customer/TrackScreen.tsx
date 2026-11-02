@@ -64,7 +64,7 @@ export function TrackScreen({ navigation, route }: NativeStackScreenProps<Custom
   const mapHeight = isDesktop ? undefined : Math.max(240, Math.min(420, Math.round(height * 0.42)));
 
   if (loading && !data) return <View style={{ padding: spacing.lg, gap: 14 }}><Skeleton h={260} r={16} /><Skeleton h={30} w="60%" /><Skeleton h={90} r={16} /></View>;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const tr = data!;
   const accepted = order.data?.order.partnerAccepted ?? Boolean(tr.partner);
   const stage = stageOf(tr.status, accepted);
@@ -80,6 +80,8 @@ export function TrackScreen({ navigation, route }: NativeStackScreenProps<Custom
   const sheet = (
     <ScrollView style={[s.sheet, isDesktop && s.sheetDesktop]} contentContainerStyle={s.sheetBody} showsVerticalScrollIndicator={false}>
       <View style={s.grab} />
+      {order.error ? <ErrorView message={order.error} onRetry={order.reload} retryLabel={t('common.retry')} /> : null}
+      {store.error ? <ErrorView message={store.error} onRetry={store.reload} retryLabel={t('common.retry')} /> : null}
       <Enter index={0}>
         <View style={s.headRow}>
           <View style={{ flex: 1 }}>

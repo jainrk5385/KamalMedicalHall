@@ -2,6 +2,7 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,7 +10,7 @@ import { endpoints } from '../../api/endpoints';
 import { AnnouncementSlider } from '../../components/AnnouncementSlider';
 import { OrderCard } from '../../components/OrderCard';
 import { Skeleton, Tap } from '../../components/motion';
-import { Icon, ResponsiveGrid } from '../../components/ui';
+import { ErrorView, Icon, ResponsiveGrid } from '../../components/ui';
 import { useContentStyle } from '../../layout';
 import { useLoad } from '../../hooks';
 import type { CustomerStackParamList, CustomerTabParamList } from '../../navigation/types';
@@ -34,13 +35,18 @@ export function HomeScreen(_props: BottomTabScreenProps<CustomerTabParamList, 'H
   const unread = useLoad(async () => (await endpoints.notifications()).notifications.filter((n) => !n.read).length, ['notification']);
   const shop = useLoad(() => endpoints.shop());
   const ann = useLoad(() => endpoints.announcements(), ['announcement:update']);
+  const [refreshing, setRefreshing] = useState(false);
   const slides = (ann.data?.announcements ?? []).filter((a) => a.hasImages);
   const shopPhone = shop.data?.phones?.find((p) => p.number)?.number ?? shop.data?.legacy.phone ?? null;
-  const refresh = () => { void active.reload(); void unread.reload(); void ann.reload(); };
+  const refresh = async () => {
+    setRefreshing(true);
+    try { await Promise.all([active.reload(), unread.reload(), shop.reload(), ann.reload()]); }
+    finally { setRefreshing(false); }
+  };
 
   return (
     <SafeAreaView style={s.fill} edges={['top']}>
-      <ScrollView contentContainerStyle={[s.body, content]} refreshControl={<RefreshControl refreshing={active.loading && !!active.data} onRefresh={refresh} tintColor={colors.primary} />} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[s.body, content]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh(); }} tintColor={colors.primary} />} showsVerticalScrollIndicator={false}>
         <View style={s.top}>
           <View style={s.loc}><Text numberOfLines={2} style={[type.h2, { color: colors.navy }]}>{t('brand.name')}</Text></View>
           <View style={s.topActions}>
@@ -50,6 +56,10 @@ export function HomeScreen(_props: BottomTabScreenProps<CustomerTabParamList, 'H
         </View>
         <Text style={[type.h2, { marginTop: spacing.lg, color: colors.text }]}>{user?.name ? t('home.greetingName', { name: user.name.split(' ')[0] }) : t('home.greeting')}</Text>
         <Text style={[type.body, { color: colors.secondary, marginBottom: spacing.lg }]}>{t('home.help')}</Text>
+
+        {shop.error ? <ErrorView message={shop.error} onRetry={shop.reload} retryLabel={t('common.retry')} /> : null}
+        {ann.error ? <ErrorView message={ann.error} onRetry={ann.reload} retryLabel={t('common.retry')} /> : null}
+        {unread.error ? <ErrorView message={unread.error} onRetry={unread.reload} retryLabel={t('common.retry')} /> : null}
 
         <AnnouncementSlider items={slides} onOpen={(a) => nav.navigate('Announcement', { id: a.id })} />
 
@@ -64,7 +74,8 @@ export function HomeScreen(_props: BottomTabScreenProps<CustomerTabParamList, 'H
           </LinearGradient>
         </Tap>
 
-        {!active.data && active.loading ? <View style={{ gap: 12, marginTop: spacing.xl }}><Skeleton h={22} w="45%" /><Skeleton h={104} r={16} /></View> : (active.data?.orders.length ?? 0) > 0 ? <>
+        {active.error && active.data ? <ErrorView message={active.error} onRetry={active.reload} retryLabel={t('common.retry')} /> : null}
+        {!active.data && active.loading ? <View style={{ gap: 12, marginTop: spacing.xl }}><Skeleton h={22} w="45%" /><Skeleton h={104} r={16} /></View> : active.error && !active.data ? <ErrorView message={active.error} onRetry={active.reload} retryLabel={t('common.retry')} /> : (active.data?.orders.length ?? 0) > 0 ? <>
           <Text style={[type.h3, s.section]}>{t('home.activeOrders')}</Text>
           <ResponsiveGrid>{active.data!.orders.map((o, i) => <OrderCard key={o.id} order={o} index={i} onPress={() => (o.status === 'out_for_delivery' ? nav.navigate('Track', { orderId: o.id }) : nav.navigate('OrderDetail', { orderId: o.id }))} />)}</ResponsiveGrid>
         </> : null}

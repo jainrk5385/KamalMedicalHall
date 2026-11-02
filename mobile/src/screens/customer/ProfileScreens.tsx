@@ -164,8 +164,9 @@ export function LanguageScreen() {
 
 export function HelpScreen() {
   const { t } = useTranslation();
-  const { data, loading } = useLoad(() => endpoints.config());
+  const { data, error, loading, reload } = useLoad(() => endpoints.config());
   if (loading && !data) return <Loading />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const st = data?.store;
   return (
     <Screen>
@@ -183,7 +184,7 @@ export function LegalScreen() {
   const { t } = useTranslation();
   const { data, error, loading, reload } = useLoad(() => endpoints.terms());
   if (loading && !data) return <Loading />;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   if (!data?.text) return <Message icon="document-text-outline" title={t('legal.title')} text={t('legal.pending')} />;
   return (
     <Screen>

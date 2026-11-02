@@ -35,9 +35,9 @@ export const useCart = create<CartState>()(persist((set, get) => ({
   kind: () => (get().prescriptions.length ? 'prescription' : get().medicines.length ? 'medicines' : null),
   setMedicines: (medicines) => set({ medicines, idempotencyKey: null }),
   setPrescriptions: (prescriptions) => set({ prescriptions, idempotencyKey: null }),
-  setNote: (note) => set({ note }),
-  setAddress: (id) => set((s) => ({ checkout: { ...s.checkout, id } })),
-  setDate: (date) => set((s) => ({ checkout: { ...s.checkout, date } })),
+  setNote: (note) => set((s) => s.note === note ? s : { note, idempotencyKey: null }),
+  setAddress: (id) => set((s) => s.checkout.id === id ? s : { checkout: { ...s.checkout, id }, idempotencyKey: null }),
+  setDate: (date) => set((s) => s.checkout.date === date ? s : { checkout: { ...s.checkout, date }, idempotencyKey: null }),
   ensureKey: () => {
     const existing = get().idempotencyKey;
     if (existing) return existing;

@@ -17,7 +17,7 @@ export function AnnouncementScreen({ route }: NativeStackScreenProps<CustomerSta
   const content = useContentStyle(true);
   const { data, error, loading, reload } = useLoad(() => endpoints.announcement(route.params.id));
   if (loading && !data) return <View style={{ padding: spacing.lg, gap: 12 }}><Skeleton h={200} r={16} /><Skeleton h={28} w="70%" /><Skeleton h={80} r={12} /></View>;
-  if (error && !data) return error.toLowerCase().includes('not found') ? <Message icon="megaphone-outline" title={t('ann.gone')} text={t('ann.goneHelp')} /> : <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return error.toLowerCase().includes('not found') ? <Message icon="megaphone-outline" title={t('ann.gone')} text={t('ann.goneHelp')} /> : <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const a = data!.announcement;
   return (
     <ScrollView contentContainerStyle={[s.body, content]} showsVerticalScrollIndicator={false}>

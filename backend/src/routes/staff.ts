@@ -574,25 +574,31 @@ adminRouter.post('/partners', async (req, res) => {
   let id = '';
 
   try {
-    await tx(async (session) => {
-      const [user] = await User.create(
-        [{
-          phone,
-          role: 'delivery_partner',
-          name: body.name,
-          signedUpAt: new Date(),
-        }],
-        { session },
-      );
-
-      if (!user) throw new Error('Delivery partner account could not be created.');
-
-      await DeliveryPartner.create(
-        [{ userId: user._id }],
-        { session },
-      );
-      id = user._id.toString();
+    const user = await User.create({
+      phone,
+      role: 'delivery_partner',
+      name: body.name,
+      signedUpAt: new Date(),
     });
+
+    try {
+      await DeliveryPartner.create({ userId: user._id });
+      id = user._id.toString();
+    } catch (profileError) {
+      // Keep the user collection clean if the second standalone write fails.
+      try {
+        await User.deleteOne({ _id: user._id }).exec();
+      } catch (cleanupError) {
+        console.error(JSON.stringify({
+          level: 'error',
+          msg: 'delivery_partner_create_cleanup_failed',
+          error: cleanupError instanceof Error
+            ? { name: cleanupError.name, message: cleanupError.message }
+            : String(cleanupError),
+        }));
+      }
+      throw profileError;
+    }
   } catch (error) {
     if (
       typeof error === 'object' &&
@@ -1035,23 +1041,28 @@ adminRouter.post('/pincodes', async (req, res) => {
 
   const unique = [...new Set(b.pincodes)];
 
-  await tx(async (session) => {
-    for (const pincode of unique) {
-      await ServicePincode.findOneAndUpdate(
-        { pincode },
-        {
-          $set: {
-            active: true,
-            ...(b.area !== undefined ? { area: b.area } : {}),
+  try {
+    await ServicePincode.bulkWrite(
+      unique.map((pincode) => ({
+        updateOne: {
+          filter: { pincode },
+          update: {
+            $set: {
+              active: true,
+              ...(b.area !== undefined ? { area: b.area } : {}),
+            },
+            $setOnInsert: { pincode },
           },
-          $setOnInsert: { pincode },
+          upsert: true,
         },
-        { upsert: true, returnDocument: 'after', session },
-      );
-    }
-  });
+      })),
+      { ordered: true },
+    );
+  } finally {
+    // A bulk upsert may have saved earlier entries before a later entry fails.
+    clearPincodeCache();
+  }
 
-  clearPincodeCache();
   res.status(201).json({ added: unique.length });
 });
 

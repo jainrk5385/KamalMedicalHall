@@ -49,10 +49,10 @@ export function DeliveryTimeScreen({ navigation }: NativeStackScreenProps<Custom
   const dates = data?.deliveryDates ?? data?.deliveryDays.map((d) => d.date) ?? [];
 
   // A date chosen earlier may have dropped off the list (the cut-off time passed): clear it.
-  useEffect(() => { if (dates.length && date && !dates.includes(date)) useCart.setState((st) => ({ checkout: { ...st.checkout, date: null } })); }, [dates, date]);
+  useEffect(() => { if (dates.length && date && !dates.includes(date)) useCart.setState((st) => ({ checkout: { ...st.checkout, date: null }, idempotencyKey: null })); }, [dates, date]);
 
   if (loading && !data) return <CheckoutSkeleton />;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const cutoff = data?.orderCutoffTime ? new Date(`2000-01-01T${data.orderCutoffTime}:00`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
   return (
     <Screen footer={<Button title={t('time.review')} icon="arrow-forward" disabled={!date || !dates.includes(date)} onPress={() => goTo(navigation, 'Review')} />}>
@@ -83,7 +83,7 @@ export function ReviewScreen({ navigation }: NativeStackScreenProps<CustomerStac
   const shake = useShake(errCount);
   const address = addresses.data?.addresses.find((a) => a.id === checkout.id);
 
-  if ((addresses.loading || config.loading) && !addresses.data) return <CheckoutSkeleton />;
+  if ((addresses.loading && !addresses.data) || (config.loading && !config.data)) return <CheckoutSkeleton />;
   if (addresses.error || config.error) return <ErrorView message={(addresses.error ?? config.error)!} onRetry={() => { void addresses.reload(); void config.reload(); }} retryLabel={t('common.retry')} />;
 
   const ready = !!address && !!checkout.date;

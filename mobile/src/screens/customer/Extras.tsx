@@ -65,7 +65,7 @@ export function ChatScreen({ navigation, route }: NativeStackScreenProps<Custome
   };
 
   if (loading && !data) return <Loading />;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   return (
     <SafeAreaView style={s.fill} edges={['bottom', 'left', 'right']}>
       <KeyboardAvoidingView style={s.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
@@ -169,7 +169,7 @@ export function MyReviewsScreen() {
   const { t } = useTranslation();
   const { data, error, loading, reload } = useLoad(() => endpoints.reviews.mine(), ['notification']);
   if (loading && !data) return <Loading />;
-  if (error && !data) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
+  if (error) return <ErrorView message={error} onRetry={reload} retryLabel={t('common.retry')} />;
   const all = data?.reviews ?? [];
   const approved = all.filter((r) => r.status === 'approved');
   const waiting = all.filter((r) => r.status !== 'approved');

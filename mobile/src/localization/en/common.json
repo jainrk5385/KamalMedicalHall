@@ -185,6 +185,8 @@
     "landmark": "Landmark (optional)",
     "pincode": "Pincode",
     "cityNote": "City: Jaipur, Rajasthan",
+    "loadFailed": "Could not load this address. Please try again.",
+    "loadMissing": "This address is no longer available.",
     "save": "Save",
     "deliverHere": "Great, we deliver here"
   },
@@ -243,7 +245,9 @@
     "emptyHelp_cancelled": "Orders you or the store cancel will show up here.",
     "tab_active": "Ongoing",
     "empty_active": "No ongoing orders",
-    "emptyHelp_active": "Orders that are being prepared or delivered will show up here."
+    "emptyHelp_active": "Orders that are being prepared or delivered will show up here.",
+    "loadMore": "Load more orders",
+    "loadingMore": "Loading orders…"
   },
   "order": {
     "waitingReview": "The pharmacy is checking your order. We will notify you with the amount.",
