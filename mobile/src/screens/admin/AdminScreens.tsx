@@ -805,6 +805,7 @@ export function MoreScreen(_p: BottomTabScreenProps<AdminTabParamList, 'More'>) 
         {row('wallet-outline', t('cash.title'), () => nav.navigate('Cash'))}
         {row('download-outline', t('admin.exports'), () => nav.navigate('Exports'))}
         {row('megaphone-outline', t('ann.title'), () => nav.navigate('Announcements'))}
+        {row('megaphone-outline', t('admin.broadcast'), () => nav.navigate('Broadcast'))}
         {row('card-outline', t('admin.paymentDetails'), () => nav.navigate('PaymentDetails'))}
         {row('calendar-outline', t('admin.attendance'), () => nav.navigate('Attendance'))}
         {row('document-text-outline', t('admin.terms'), () => nav.navigate('Terms'))}

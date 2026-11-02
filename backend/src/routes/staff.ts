@@ -6,9 +6,9 @@ import { z } from 'zod';
 import { authed, normalisePhone, requireRole } from '../auth.js';
 import { config } from '../config.js';
 import { tx } from '../db.js';
-import { bad, conflict, notFound, parse } from '../http.js';
+import { bad, conflict, HttpError, notFound, parse } from '../http.js';
 import { cashToCollect, closingMessage, closingSummary, settleCash } from '../cash.js';
-import { notify, notifyAdmins } from '../notify.js';
+import { notify, notifyAdmins, notifyMany } from '../notify.js';
 import { CANCELLABLE, loadOrder, transition, type OrderStatus } from '../orderService.js';
 import { closeStore, reopenStore, setDutyStatus, type DutyStatus } from '../dutyService.js';
 import {
@@ -562,6 +562,81 @@ adminRouter.post('/orders/:id/unassign', async (req, res) => {
 // Admin: delivery partners
 // ============================================================
 
+adminRouter.post('/partners', async (req, res) => {
+  const body = parse(
+    z.object({
+      name: z.string().trim().min(2).max(80),
+      phone: z.string().trim().min(10).max(15),
+    }),
+    req.body,
+  );
+  const phone = normalisePhone(body.phone);
+  let id = '';
+
+  try {
+    await tx(async (session) => {
+      const [user] = await User.create(
+        [{
+          phone,
+          role: 'delivery_partner',
+          name: body.name,
+          signedUpAt: new Date(),
+        }],
+        { session },
+      );
+
+      if (!user) throw new Error('Delivery partner account could not be created.');
+
+      await DeliveryPartner.create(
+        [{ userId: user._id }],
+        { session },
+      );
+      id = user._id.toString();
+    });
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: number }).code === 11000
+    ) {
+      throw new HttpError(
+        409,
+        'already_registered',
+        'This mobile number already has an account.',
+      );
+    }
+
+    throw error;
+  }
+
+  emitAdmins('partner:update', { partnerId: id });
+  res.status(201).json({ id });
+});
+
+adminRouter.post('/broadcast', async (req, res) => {
+  const body = parse(
+    z.object({
+      title: z.string().trim().min(2).max(60),
+      body: z.string().trim().min(2).max(240),
+    }),
+    req.body,
+  );
+
+  const customers = await User.find({
+    role: 'customer',
+    isActive: { $ne: false },
+  })
+    .select('_id')
+    .lean()
+    .exec();
+
+  const customerIds = customers.map((customer) => customer._id.toString());
+  await notifyMany(customerIds, 'announcement', body.title, body.body);
+
+  res.json({ sent: customerIds.length });
+});
+
 adminRouter.get('/partners', async (_req, res) => {
   const day = todayKey();
   const start = istStart();
@@ -669,6 +744,133 @@ adminRouter.get('/partners', async (_req, res) => {
         pincodes: pincodeMap.get(key) ?? [],
       };
     }),
+  });
+});
+
+adminRouter.get('/attendance', async (req, res) => {
+  const { days } = parse(
+    z.object({
+      days: z.coerce.number().int().min(1).max(31).default(7),
+    }),
+    req.query,
+  );
+
+  const today = todayKey();
+  const start = new Date(`${today}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+  const startDay = start.toISOString().slice(0, 10);
+  const dates = Array.from({ length: days }, (_, index) => {
+    const date = new Date(start);
+    date.setUTCDate(date.getUTCDate() + index);
+    return date.toISOString().slice(0, 10);
+  });
+
+  const [partnerRows, attendanceRows, closedRows] = await Promise.all([
+    DeliveryPartner.find({ active: true })
+      .populate('userId', 'name phone role')
+      .lean()
+      .exec(),
+    Attendance.find({
+      day: { $gte: startDay, $lte: today },
+    }).lean().exec(),
+    StoreClosedDay.find({
+      day: { $gte: startDay, $lte: today },
+    })
+      .select('day')
+      .lean()
+      .exec(),
+  ]);
+
+  const partners = (partnerRows as any[])
+    .filter((partner) => partner.userId?.role === 'delivery_partner')
+    .sort((a, b) =>
+      String(a.userId?.name ?? '').localeCompare(String(b.userId?.name ?? '')),
+    );
+  const attendanceByPartnerDay = new Map<string, any>();
+
+  for (const attendance of attendanceRows as any[]) {
+    attendanceByPartnerDay.set(
+      `${attendance.partnerId.toString()}:${attendance.day}`,
+      attendance,
+    );
+  }
+
+  const closedDays = (closedRows as any[]).map((row) => row.day as string);
+  const closedDaySet = new Set(closedDays);
+  const current = partners.map((partner) => {
+    const user = partner.userId;
+    const id = user._id.toString();
+    const attendance = attendanceByPartnerDay.get(`${id}:${today}`);
+    const onDuty = Boolean(partner.onDuty && partner.onDutyDay === today);
+    const state = ['available', 'returning', 'break'].includes(partner.state) && !onDuty
+      ? 'off'
+      : partner.state;
+    const isLeave = attendance?.status === 'leave' || attendance?.status === 'paid_leave';
+    const present = Boolean(attendance?.checkedInAt) || attendance?.status === 'present';
+    const dutyStatus = isLeave
+      ? 'leave'
+      : attendance?.status === 'absent'
+        ? 'absent'
+        : state === 'break'
+          ? 'on_break'
+          : onDuty
+            ? 'on_duty'
+            : 'off_duty';
+    const notIn = !present && !isLeave && !closedDaySet.has(today);
+
+    return {
+      id,
+      name: user.name ?? '',
+      phone: user.phone,
+      state,
+      dutyStatus,
+      paidLeave: attendance?.status === 'paid_leave',
+      present,
+      notIn,
+      checkedInAt: attendance?.checkedInAt ?? null,
+      checkedOutAt: attendance?.checkedOutAt ?? null,
+      breakMinutes: Number(attendance?.breakMinutes ?? 0),
+    };
+  });
+
+  const summary = {
+    total: current.length,
+    present: current.filter((partner) => partner.present).length,
+    onDuty: current.filter((partner) => partner.dutyStatus === 'on_duty').length,
+    onBreak: current.filter((partner) => partner.dutyStatus === 'on_break').length,
+    offDuty: current.filter(
+      (partner) => partner.dutyStatus === 'off_duty' && !partner.notIn,
+    ).length,
+    onLeave: current.filter((partner) => partner.dutyStatus === 'leave').length,
+    absent: current.filter(
+      (partner) => partner.notIn || partner.dutyStatus === 'absent',
+    ).length,
+    available: current.filter((partner) => partner.state === 'available').length,
+    busy: current.filter((partner) => ['reserved', 'busy', 'returning'].includes(partner.state)).length,
+  };
+
+  const history = partners.map((partner) => {
+    const user = partner.userId;
+    const id = user._id.toString();
+
+    return {
+      id,
+      name: user.name ?? '',
+      days: dates.map((day) => {
+        const attendance = attendanceByPartnerDay.get(`${id}:${day}`);
+        if (!attendance) return null;
+        if (attendance.status === 'break') return 'present';
+        return attendance.status;
+      }),
+    };
+  });
+
+  res.json({
+    dates,
+    closedDays,
+    today: current,
+    summary,
+    history,
   });
 });
 

@@ -389,7 +389,17 @@ otpRouter.post('/send', async (req, res) => {
   }
 
   if (config.authMode === 'sms') {
-    if ((await smsSettings()).otpChannel === 'static') {
+    const settings = await smsSettings();
+
+    if (settings.otpChannel === 'static') {
+      if (config.isProd) {
+        throw new HttpError(
+          503,
+          'otp_unavailable',
+          'SMS verification is not configured for production. Please contact the store.',
+        );
+      }
+
       res.json({ sent: true, testMode: true });
       return;
     }
@@ -461,7 +471,17 @@ otpRouter.post('/verify', async (req, res) => {
   const failedAttempts = fails.get(phone);
 
   if (config.authMode === 'sms') {
-    if ((await smsSettings()).otpChannel === 'static') {
+    const settings = await smsSettings();
+
+    if (settings.otpChannel === 'static') {
+      if (config.isProd) {
+        throw new HttpError(
+          503,
+          'otp_unavailable',
+          'SMS verification is not configured for production. Please contact the store.',
+        );
+      }
+
       if (
         failedAttempts &&
         failedAttempts.n >= MAX_WRONG &&

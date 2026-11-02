@@ -82,6 +82,14 @@ smsAdmin.get('/sms', async (_req, res) => {
 smsAdmin.put('/sms', async (req, res) => {
   const body = parse(schema, req.body);
 
+  if (config.isProd && body.otpChannel === 'static') {
+    throw new HttpError(
+      400,
+      'test_otp_disabled',
+      'Static test OTPs are disabled in production. Configure the SMS gateway instead.',
+    );
+  }
+
   const update: Record<string, unknown> = {
     senderId: body.senderId,
     smsType: body.smsType,

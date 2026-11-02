@@ -1,5 +1,5 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer, type LinkingOptions } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +35,7 @@ import { useCart } from '../store/cart';
 import { useSession } from '../store/session';
 import { colors, fonts } from '../theme';
 import { navigationRef } from './ref';
+import { nativeLinking, webLinking } from './linking';
 import type { AdminStackParamList, AdminTabParamList, AuthStackParamList, CustomerStackParamList, CustomerTabParamList, PartnerStackParamList, PartnerTabParamList } from './types';
 
 
@@ -228,8 +229,6 @@ function CustomerGate() {
   return needsName ? <SignupScreen /> : <CustomerNavigator />;
 }
 
-const linking: LinkingOptions<object> = { prefixes: ['kamalmedicalhall://'] };
-
 export function Navigation() {
   const status = useSession((s) => s.status);
   const role = useSession((s) => s.user?.role);
@@ -238,7 +237,7 @@ export function Navigation() {
 
   if (status === 'loading') return <View style={{ flex: 1, backgroundColor: colors.white }} />; // the animated splash covers this
   return (
-    <NavigationContainer ref={navigationRef} linking={Platform.OS === 'web' ? undefined : linking}>
+    <NavigationContainer ref={navigationRef} linking={Platform.OS === 'web' ? webLinking : nativeLinking}>
       {status === 'out' ? <AuthNavigator /> : role === 'admin' ? <AdminNavigator /> : role === 'delivery_partner' ? <PartnerNavigator /> : <CustomerGate />}
     </NavigationContainer>
   );
