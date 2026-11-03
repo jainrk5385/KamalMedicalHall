@@ -66,34 +66,71 @@ export const devProvider = (): OtpProvider => {
       purpose = pPurpose ?? 'login';
     },
 
+    // async confirmOtp(code, profile) {
+    //   if (!phone) {
+    //     throw new Error('Please enter your phone number first.');
+    //   }
+
+    //   try {
+    //     const { token } = await endpoints.devLogin(
+    //       phone,
+    //       code,
+    //       purpose,
+    //       purpose === 'signup' ? profile : undefined
+    //     );
+
+    //     await secure.set(TOKEN_KEY, token);
+
+    //     return token;
+    //   } catch (e) {
+    //     if (e instanceof ApiError && e.status === 401) {
+    //       throw new ApiError(
+    //         401,
+    //         'invalid_otp',
+    //         'Incorrect OTP'
+    //       );
+    //     }
+
+    //     throw e;
+    //   }
+    // },
     async confirmOtp(code, profile) {
-      if (!phone) {
-        throw new Error('Please enter your phone number first.');
-      }
+  console.log('1. DEV OTP CONFIRM CALLED');
+  console.log('2. Phone:', phone);
+  console.log('3. OTP:', code);
+  console.log('4. Purpose:', purpose);
 
-      try {
-        const { token } = await endpoints.devLogin(
-          phone,
-          code,
-          purpose,
-          purpose === 'signup' ? profile : undefined
-        );
+  if (!phone) {
+    throw new Error('Please enter your phone number first.');
+  }
 
-        await secure.set(TOKEN_KEY, token);
+  try {
+    console.log('5. Calling /auth/otp/dev-login');
 
-        return token;
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 401) {
-          throw new ApiError(
-            401,
-            'invalid_otp',
-            'Incorrect OTP'
-          );
-        }
+    const { token } = await endpoints.devLogin(
+      phone,
+      code,
+      purpose,
+      purpose === 'signup' ? profile : undefined
+    );
 
-        throw e;
-      }
-    },
+    console.log('6. DEV LOGIN API SUCCESS');
+
+    await secure.set(TOKEN_KEY, token);
+
+    console.log('7. TOKEN SAVED');
+
+    return token;
+  } catch (e) {
+    console.error('DEV LOGIN ERROR:', e);
+
+    if (e instanceof ApiError && e.status === 401) {
+      throw new ApiError(401, 'invalid_otp', 'Incorrect OTP');
+    }
+
+    throw e;
+  }
+},
 
     getToken: () => secure.get(TOKEN_KEY),
 
