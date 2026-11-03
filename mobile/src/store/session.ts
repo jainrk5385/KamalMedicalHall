@@ -80,24 +80,13 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   
+
 async login(token, opts) {
   let user: User;
 
   try {
-    if (otpProvider.mode === 'sms') {
-      // Server OTP verification already created/verified the account.
-      // The server session token or Firebase custom-token session is now active.
-      const res = await endpoints.me({
-        timeoutMs: 65_000,
-        retry: 'never',
-      });
-
-      user = res.user;
-    } else {
-      // Firebase client OTP flow.
-      const res = await endpoints.session(token, opts);
-      user = res.user;
-    }
+    const res = await endpoints.session(token, opts);
+    user = res.user;
   } catch (error) {
     await otpProvider.signOut();
     throw error;
@@ -106,38 +95,38 @@ async login(token, opts) {
   const profile = opts?.profile;
 
   if (opts?.purpose === 'signup' && profile) {
-    try {
-      const extra: {
-        name?: string;
-        email?: string;
-        gender?: Gender | null;
-        dateOfBirth?: string | null;
-        city?: string;
-      } = {};
+    const extra: {
+      name?: string;
+      email?: string;
+      gender?: Gender | null;
+      dateOfBirth?: string | null;
+      city?: string;
+    } = {};
 
-      if (profile.name?.trim()) extra.name = profile.name.trim();
-      if (profile.email?.trim()) extra.email = profile.email.trim();
+    if (profile.name?.trim()) extra.name = profile.name.trim();
+    if (profile.email?.trim()) extra.email = profile.email.trim();
 
-      if (profile.gender !== undefined) {
-        extra.gender = profile.gender;
-      }
+    if (profile.gender !== undefined) {
+      extra.gender = profile.gender;
+    }
 
-      if (profile.dateOfBirth !== undefined) {
-        extra.dateOfBirth = profile.dateOfBirth;
-      }
+    if (profile.dateOfBirth !== undefined) {
+      extra.dateOfBirth = profile.dateOfBirth;
+    }
 
-      if (profile.city) {
-        extra.city = profile.city;
-      }
+    if (profile.city) {
+      extra.city = profile.city;
+    }
 
-      if (Object.keys(extra).length > 0) {
+    if (Object.keys(extra).length > 0) {
+      try {
         const updated = await endpoints.updateMe(extra);
         user = updated.user;
+      } catch (error) {
+        logger.warn('signup profile update failed', {
+          message: (error as Error).message,
+        });
       }
-    } catch (error) {
-      logger.warn('signup profile update failed', {
-        message: (error as Error).message,
-      });
     }
   }
 
@@ -156,6 +145,7 @@ async login(token, opts) {
     needsProfile: !user.name,
   };
 },
+
 
   async refresh() {
     try {
