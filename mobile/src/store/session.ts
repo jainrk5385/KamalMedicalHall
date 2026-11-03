@@ -84,13 +84,29 @@ export const useSession = create<SessionState>((set, get) => ({
 async login(token, opts) {
   let user: User;
 
+  // try {
+  //   const res = await endpoints.session(token, opts);
+  //   user = res.user;
+  // } catch (error) {
+  //   await otpProvider.signOut();
+  //   throw error;
+  // }
+
   try {
+  if (otpProvider.mode === 'dev') {
+    const res = await endpoints.me({
+      timeoutMs: 65000,
+      retry: 'never',
+    });
+    user = res.user;
+  } else {
     const res = await endpoints.session(token, opts);
     user = res.user;
-  } catch (error) {
-    await otpProvider.signOut();
-    throw error;
   }
+} catch (error) {
+  await otpProvider.signOut();
+  throw error;
+}
 
   const profile = opts?.profile;
 
