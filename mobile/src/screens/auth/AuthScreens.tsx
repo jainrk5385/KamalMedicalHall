@@ -187,10 +187,15 @@ export function OtpScreen({ route, navigation }: NativeStackScreenProps<AuthStac
       tick('success');
       await login(token, { purpose, profile }); // routing to the right app happens from the server-assigned role
     } catch (e) {
-      setError(e instanceof ApiError ? (e.code === 'invalid_otp' ? t('auth.wrongOtp') : e.message) : t('auth.verifyFailed'));
-      setErrCount((c) => c + 1);
-      setCode('');
-    } finally { setBusy(false); }
+  console.error('OTP LOGIN ERROR:', e);
+
+  const message =
+    e instanceof Error ? e.message : String(e);
+
+  setError(message);
+  setErrCount((c) => c + 1);
+} 
+    finally { setBusy(false); }
   };
 
   const resend = async () => {
