@@ -79,68 +79,83 @@ export const useSession = create<SessionState>((set, get) => ({
     }
   },
 
-  async login(token, opts) {
-    let user: User;
+  
+async login(token, opts) {
+  let user: User;
 
-    try {
-      // Firebase ID token is verified by backend here.
+  try {
+    if (otpProvider.mode === 'sms') {
+      // Server OTP verification already created/verified the account.
+      // The server session token or Firebase custom-token session is now active.
+      const res = await endpoints.me({
+        timeoutMs: 65_000,
+        retry: 'never',
+      });
+
+      user = res.user;
+    } else {
+      // Firebase client OTP flow.
       const res = await endpoints.session(token, opts);
       user = res.user;
-    } catch (error) {
-      await otpProvider.signOut();
-      throw error;
     }
+  } catch (error) {
+    await otpProvider.signOut();
+    throw error;
+  }
 
-    // Save remaining signup details after the account is created.
-    const profile = opts?.profile;
+  const profile = opts?.profile;
 
-    if (opts?.purpose === 'signup' && profile) {
-      try {
-        const extra: {
-          gender?: Gender | null;
-          dateOfBirth?: string | null;
-          city?: string;
-        } = {};
+  if (opts?.purpose === 'signup' && profile) {
+    try {
+      const extra: {
+        name?: string;
+        email?: string;
+        gender?: Gender | null;
+        dateOfBirth?: string | null;
+        city?: string;
+      } = {};
 
-        if (profile.gender !== undefined) {
-          extra.gender = profile.gender;
-        }
+      if (profile.name?.trim()) extra.name = profile.name.trim();
+      if (profile.email?.trim()) extra.email = profile.email.trim();
 
-        if (profile.dateOfBirth !== undefined) {
-          extra.dateOfBirth = profile.dateOfBirth;
-        }
-
-        if (profile.city) {
-          extra.city = profile.city;
-        }
-
-        if (Object.keys(extra).length > 0) {
-          const updated = await endpoints.updateMe(extra);
-          user = updated.user;
-        }
-      } catch (error) {
-        // Keep the account signed in if optional profile details fail.
-        logger.warn('signup extra profile update failed', {
-          message: (error as Error).message,
-        });
+      if (profile.gender !== undefined) {
+        extra.gender = profile.gender;
       }
+
+      if (profile.dateOfBirth !== undefined) {
+        extra.dateOfBirth = profile.dateOfBirth;
+      }
+
+      if (profile.city) {
+        extra.city = profile.city;
+      }
+
+      if (Object.keys(extra).length > 0) {
+        const updated = await endpoints.updateMe(extra);
+        user = updated.user;
+      }
+    } catch (error) {
+      logger.warn('signup profile update failed', {
+        message: (error as Error).message,
+      });
     }
+  }
 
-    set({
-      status: 'in',
-      user,
-      accountRequest: null,
-      bootError: null,
-    });
+  set({
+    status: 'in',
+    user,
+    accountRequest: null,
+    bootError: null,
+  });
 
-    setMonitoringUser(user);
-    connectRealtime();
-    void registerForPush();
+  setMonitoringUser(user);
+  connectRealtime();
+  void registerForPush();
 
-    return {
-      needsProfile: !user.name,
-    };
-  },
+  return {
+    needsProfile: !user.name,
+  };
+},
 
   async refresh() {
     try {

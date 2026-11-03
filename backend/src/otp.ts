@@ -92,6 +92,9 @@ function allowSend(phone: string): boolean {
 
 /** Fixed test code while OTP delivery is configured as test code. */
 export const STATIC_OTP = '123456';
+const testOtpEnabled =
+  !config.isProd &&
+  process.env.TEST_OTP_ENABLED?.trim().toLowerCase() === 'true';
 
 const purpose = z.enum(['login', 'signup']).optional();
 
@@ -403,18 +406,31 @@ otpRouter.post('/send', async (req, res) => {
   if (config.authMode === 'sms') {
     const settings = await smsSettings();
 
-    if (settings.otpChannel === 'static') {
-      if (config.isProd) {
-        throw new HttpError(
-          503,
-          'otp_unavailable',
-          'SMS verification is not configured for production. Please contact the store.',
-        );
-      }
+    // if (settings.otpChannel === 'static') {
+    //   if (config.isProd) {
+    //     throw new HttpError(
+    //       503,
+    //       'otp_unavailable',
+    //       'SMS verification is not configured for production. Please contact the store.',
+    //     );
+    //   }
 
-      res.json({ sent: true, testMode: true });
-      return;
-    }
+    //   res.json({ sent: true, testMode: true });
+    //   return;
+    // }
+
+    if (settings.otpChannel === 'static') {
+  if (!config.testOtpEnabled) {
+  throw new HttpError(
+    503,
+    'otp_unavailable',
+    'Test OTP is disabled.',
+  );
+}
+
+  res.json({ sent: true, testMode: true });
+  return;
+}
 
     await sendOwnCode(phone);
 
@@ -468,15 +484,24 @@ otpRouter.post('/send', async (req, res) => {
 
 otpRouter.post('/verify', async (req, res) => {
   if (config.authMode === 'firebase') {
+    // const body = parse(
+    //   z.object({
+    //     idToken: z.string().min(1),
+    //     purpose: z.enum(['login', 'signup']),
+    //     name: z.string().trim().max(100).optional(),
+    //     email: z.string().email().optional(),
+    //   }),
+    //   req.body,
+    // );
+
     const body = parse(
-      z.object({
-        idToken: z.string().min(1),
-        purpose: z.enum(['login', 'signup']),
-        name: z.string().trim().max(100).optional(),
-        email: z.string().email().optional(),
-      }),
-      req.body,
-    );
+  z.object({
+    phone: z.string().min(10).max(15),
+    code: z.string().regex(/^\d{4,8}$/),
+    purpose: z.enum(['login', 'signup']).default('login'),
+  }),
+  req.body,
+);
 
     const verifiedUser = await verifyToken(body.idToken);
     const phone = normalisePhone(verifiedUser.phone);
@@ -554,50 +579,134 @@ otpRouter.post('/verify', async (req, res) => {
   const phone = normalisePhone(body.phone);
   const failedAttempts = fails.get(phone);
 
+  // if (config.authMode === 'sms') {
+  //   const settings = await smsSettings();
+
+  //   if (settings.otpChannel === 'static') {
+  //     if (config.isProd) {
+  //       throw new HttpError(
+  //         503,
+  //         'otp_unavailable',
+  //         'SMS verification is not configured for production. Please contact the store.',
+  //       );
+  //     }
+
+  //     if (
+  //       failedAttempts &&
+  //       failedAttempts.n >= MAX_WRONG &&
+  //       failedAttempts.until > Date.now()
+  //     ) {
+  //       throw new HttpError(
+  //         429,
+  //         'otp_rate_limited',
+  //         'Too many wrong attempts. Please request a new OTP in a few minutes.',
+  //       );
+  //     }
+
+  //     if (body.code !== STATIC_OTP) {
+  //       fails.set(phone, {
+  //         n:
+  //           (failedAttempts && failedAttempts.until > Date.now()
+  //             ? failedAttempts.n
+  //             : 0) + 1,
+  //         until: Date.now() + 10 * 60_000,
+  //       });
+
+  //       throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
+  //     }
+
+  //     fails.delete(phone);
+  //   } else {
+  //     await checkOwnCode(phone, body.code);
+  //   }
+
+  //   res.json(await session(phone, 'sms'));
+  //   return;
+  // }
+
   if (config.authMode === 'sms') {
-    const settings = await smsSettings();
+  const settings = await smsSettings();
 
-    if (settings.otpChannel === 'static') {
-      if (config.isProd) {
-        throw new HttpError(
-          503,
-          'otp_unavailable',
-          'SMS verification is not configured for production. Please contact the store.',
-        );
-      }
-
-      if (
-        failedAttempts &&
-        failedAttempts.n >= MAX_WRONG &&
-        failedAttempts.until > Date.now()
-      ) {
-        throw new HttpError(
-          429,
-          'otp_rate_limited',
-          'Too many wrong attempts. Please request a new OTP in a few minutes.',
-        );
-      }
-
-      if (body.code !== STATIC_OTP) {
-        fails.set(phone, {
-          n:
-            (failedAttempts && failedAttempts.until > Date.now()
-              ? failedAttempts.n
-              : 0) + 1,
-          until: Date.now() + 10 * 60_000,
-        });
-
-        throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
-      }
-
-      fails.delete(phone);
-    } else {
-      await checkOwnCode(phone, body.code);
+  if (settings.otpChannel === 'static') {
+    if (!testOtpEnabled) {
+      throw new HttpError(
+        503,
+        'otp_unavailable',
+        'Test OTP is disabled. Please configure SMS delivery.',
+      );
     }
 
-    res.json(await session(phone, 'sms'));
-    return;
+    if (
+      failedAttempts &&
+      failedAttempts.n >= MAX_WRONG &&
+      failedAttempts.until > Date.now()
+    ) {
+      throw new HttpError(
+        429,
+        'otp_rate_limited',
+        'Too many wrong attempts. Please request a new OTP in a few minutes.',
+      );
+    }
+
+    if (body.code !== STATIC_OTP) {
+      fails.set(phone, {
+        n:
+          (failedAttempts && failedAttempts.until > Date.now()
+            ? failedAttempts.n
+            : 0) + 1,
+        until: Date.now() + 10 * 60_000,
+      });
+
+      throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
+    }
+
+    fails.delete(phone);
+  } else {
+    await checkOwnCode(phone, body.code);
   }
+
+  await checkPurpose(phone, body.purpose);
+
+  let user = await User.findOne({ phone });
+
+  if (!user && body.purpose === 'signup') {
+    try {
+      user = await User.create({
+        phone,
+        role: 'customer',
+        name: null,
+        email: null,
+        signedUpAt: new Date(),
+        isActive: true,
+      });
+    } catch (error) {
+      const mongoError = error as { code?: number };
+
+      if (mongoError.code === 11000) {
+        user = await User.findOne({ phone });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  if (!user) {
+    throw new HttpError(404, 'not_registered', 'Please sign up first.');
+  }
+
+  if (!user.isActive) {
+    throw new HttpError(
+      403,
+      'account_disabled',
+      'Your account is currently inactive. Please contact the store.',
+    );
+  }
+
+  invalidateUser(phone);
+
+  res.json(await session(phone, 'sms'));
+  return;
+}
 
   if (
     failedAttempts &&
