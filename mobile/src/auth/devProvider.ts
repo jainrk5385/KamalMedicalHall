@@ -55,6 +55,10 @@ export const devProvider = (): OtpProvider => {
     },
 
     async confirmOtp(code) {
+      if (!phone) {
+        throw new Error('Please enter your phone number first.');
+      }
+
       try {
         const { token } = await endpoints.devLogin(
           phone,
