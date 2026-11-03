@@ -34,25 +34,82 @@ export function RegisterScreen({ navigation, route }: NativeStackScreenProps<Aut
   const emailRef = useRef<TextInput>(null);
   const clear = (k: keyof Errors) => setErrors((e) => ({ ...e, [k]: undefined }));
 
-  const submit = async () => {
-    const next: Errors = {};
-    if (name.trim().length < 2) next.name = t('validation.name');
-    if (!/^[6-9]\d{9}$/.test(phone)) next.phone = t('auth.invalidPhone');
-    if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) next.email = t('validation.email');
-    if (!terms) next.terms = t('register.acceptTerms');
-    setErrors(next);
-    if (Object.values(next).some(Boolean)) { tick('error'); return; }
-    setBusy(true); setApiError('');
-    try {
-      await otpProvider.sendOtp(phone, 'signup');
-      navigation.navigate('OTP', { phone, purpose: 'signup', profile: { name: name.trim(), email: email.trim() || undefined, gender, dateOfBirth: dob || null, city: city.trim() || undefined } });
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'already_registered') {
-        const go = await showDialog({ title: t('register.existsTitle'), message: t('register.existsMsg'), icon: 'person-circle', confirmLabel: t('register.goLogin'), cancelLabel: t('common.cancel') });
-        if (go) navigation.replace('Login', { phone });
-      } else setApiError(e instanceof ApiError ? e.message : t('auth.sendFailed'));
-    } finally { setBusy(false); }
-  };
+  // const submit = async () => {
+  //   const next: Errors = {};
+  //   if (name.trim().length < 2) next.name = t('validation.name');
+  //   if (!/^[6-9]\d{9}$/.test(phone)) next.phone = t('auth.invalidPhone');
+  //   if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) next.email = t('validation.email');
+  //   if (!terms) next.terms = t('register.acceptTerms');
+  //   setErrors(next);
+  //   if (Object.values(next).some(Boolean)) { tick('error'); return; }
+  //   setBusy(true); setApiError('');
+  //   try {
+  //     await otpProvider.sendOtp(phone, 'signup');
+  //     navigation.navigate('OTP', { phone, purpose: 'signup', profile: { name: name.trim(), email: email.trim() || undefined, gender, dateOfBirth: dob || null, city: city.trim() || undefined } });
+  //   } catch (e) {
+  //     if (e instanceof ApiError && e.code === 'already_registered') {
+  //       const go = await showDialog({ title: t('register.existsTitle'), message: t('register.existsMsg'), icon: 'person-circle', confirmLabel: t('register.goLogin'), cancelLabel: t('common.cancel') });
+  //       if (go) navigation.replace('Login', { phone });
+  //     } else setApiError(e instanceof ApiError ? e.message : t('auth.sendFailed'));
+  //   } finally { setBusy(false); }
+  // };
+
+
+const submit = async () => {
+  const next: Errors = {};
+
+  if (name.trim().length < 2) next.name = t('validation.name');
+  if (!/^[6-9]\d{9}$/.test(phone)) next.phone = t('auth.invalidPhone');
+
+  if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) {
+    next.email = t('validation.email');
+  }
+
+  if (!terms) next.terms = t('register.acceptTerms');
+
+  setErrors(next);
+
+  if (Object.values(next).some(Boolean)) {
+    tick('error');
+    return;
+  }
+
+  setBusy(true);
+  setApiError('');
+
+  try {
+    await otpProvider.sendOtp(phone, 'signup');
+
+    navigation.navigate('OTP', {
+      phone,
+      purpose: 'signup',
+      profile: {
+        name: name.trim(),
+        email: email.trim() || undefined,
+        gender,
+        dateOfBirth: dob || null,
+        city: city.trim() || undefined,
+      },
+    });
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'already_registered') {
+      const go = await showDialog({
+        title: t('register.existsTitle'),
+        message: t('register.existsMsg'),
+        icon: 'person-circle',
+        confirmLabel: t('register.goLogin'),
+        cancelLabel: t('common.cancel'),
+      });
+
+      if (go) navigation.replace('Login', { phone });
+    } else {
+      setApiError(e instanceof ApiError ? e.message : t('auth.sendFailed'));
+    }
+  } finally {
+    setBusy(false);
+  }
+};
+
 
   return (
     <SafeAreaView style={s.fill}>

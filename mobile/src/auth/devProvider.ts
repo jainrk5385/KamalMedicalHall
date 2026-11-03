@@ -4,6 +4,14 @@ import { Platform } from 'react-native';
 import { endpoints } from '../api/endpoints';
 import { ApiError } from '../api/client';
 
+export type SignupProfile = {
+  name?: string;
+  email?: string;
+  gender?: 'male' | 'female' | 'other' | null;
+  dateOfBirth?: string | null;
+  city?: string;
+};
+
 export interface OtpProvider {
   mode: 'dev' | 'firebase' | 'sms';
 
@@ -12,7 +20,10 @@ export interface OtpProvider {
     purpose?: 'login' | 'signup'
   ): Promise<void>;
 
-  confirmOtp(code: string): Promise<string>;
+  confirmOtp(
+    code: string,
+    profile?: SignupProfile
+  ): Promise<string>;
 
   getToken(): Promise<string | null>;
 
@@ -49,12 +60,13 @@ export const devProvider = (): OtpProvider => {
   return {
     mode: 'dev',
 
+    // Local only: no SMS and no send API call
     async sendOtp(p, pPurpose) {
       phone = p;
       purpose = pPurpose ?? 'login';
     },
 
-    async confirmOtp(code) {
+    async confirmOtp(code, profile) {
       if (!phone) {
         throw new Error('Please enter your phone number first.');
       }
@@ -63,7 +75,8 @@ export const devProvider = (): OtpProvider => {
         const { token } = await endpoints.devLogin(
           phone,
           code,
-          purpose
+          purpose,
+          purpose === 'signup' ? profile : undefined
         );
 
         await secure.set(TOKEN_KEY, token);

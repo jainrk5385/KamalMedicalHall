@@ -69,22 +69,40 @@ export function LoginScreen({ navigation, route }: NativeStackScreenProps<AuthSt
   }));
 
   const fail = (m: string) => { setError(m); setErrCount((c) => c + 1); };
-  const submit = async () => {
-    if (!valid) return fail(t('auth.invalidPhone'));
-    setBusy(true); setError('');
-    try {
-      await otpProvider.sendOtp(phone, 'login');
-      navigation.navigate('OTP', { phone, purpose: 'login' });
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'not_registered') {
-        setBusy(false);
-        const go = await showDialog({ title: t('register.notFoundTitle'), message: t('register.notFoundMsg'), icon: 'person-add', confirmLabel: t('register.create'), cancelLabel: t('common.cancel') });
-        if (go) navigation.replace('Register', { phone });
-        return;
-      }
-      fail(e instanceof ApiError ? e.message : t('auth.sendFailed'));
-    } finally { setBusy(false); }
-  };
+  // const submit = async () => {
+  //   if (!valid) return fail(t('auth.invalidPhone'));
+  //   setBusy(true); setError('');
+  //   try {
+  //     await otpProvider.sendOtp(phone, 'login');
+  //     navigation.navigate('OTP', { phone, purpose: 'login' });
+  //   } catch (e) {
+  //     if (e instanceof ApiError && e.code === 'not_registered') {
+  //       setBusy(false);
+  //       const go = await showDialog({ title: t('register.notFoundTitle'), message: t('register.notFoundMsg'), icon: 'person-add', confirmLabel: t('register.create'), cancelLabel: t('common.cancel') });
+  //       if (go) navigation.replace('Register', { phone });
+  //       return;
+  //     }
+  //     fail(e instanceof ApiError ? e.message : t('auth.sendFailed'));
+  //   } finally { setBusy(false); }
+  // };
+
+
+const submit = async () => {
+  if (!valid) return fail(t('auth.invalidPhone'));
+
+  setBusy(true);
+  setError('');
+
+  try {
+    await otpProvider.sendOtp(phone, 'login');
+    navigation.navigate('OTP', { phone, purpose: 'login' });
+  } catch (e) {
+    fail(e instanceof ApiError ? e.message : t('auth.sendFailed'));
+  } finally {
+    setBusy(false);
+  }
+};
+
 
   return (
     <SafeAreaView style={s.fill}>
@@ -139,8 +157,9 @@ export function OtpScreen({ route, navigation }: NativeStackScreenProps<AuthStac
   const { t } = useTranslation();
   const { phone, purpose, profile } = route.params;
   const login = useSession((st) => st.login);
-  const [testMode, setTestMode] = useState(false);
-  useEffect(() => { void endpoints.config().then((c) => setTestMode(Boolean(c.otpTestMode))).catch(() => undefined); }, []);
+  // const [testMode, setTestMode] = useState(false);
+  // useEffect(() => { void endpoints.config().then((c) => setTestMode(Boolean(c.otpTestMode))).catch(() => undefined); }, []);
+  const [testMode] = useState(true);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -163,7 +182,8 @@ export function OtpScreen({ route, navigation }: NativeStackScreenProps<AuthStac
     if (value.length !== OTP_LENGTH || busy) return;
     setBusy(true); setError('');
     try {
-      const token = await otpProvider.confirmOtp(value);
+//      const token = await otpProvider.confirmOtp(value);
+      const token = await otpProvider.confirmOtp(value, profile);
       tick('success');
       await login(token, { purpose, profile }); // routing to the right app happens from the server-assigned role
     } catch (e) {
