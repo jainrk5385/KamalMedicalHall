@@ -79,68 +79,73 @@ export const useSession = create<SessionState>((set, get) => ({
     }
   },
 
-  async login(token, opts) {
-    let user: User;
+  
 
-    try {
-      // Firebase ID token is verified by backend here.
-      const res = await endpoints.session(token, opts);
-      user = res.user;
-    } catch (error) {
-      await otpProvider.signOut();
-      throw error;
+async login(token, opts) {
+  let user: User;
+
+  try {
+    const res = await endpoints.session(token, opts);
+    user = res.user;
+  } catch (error) {
+    await otpProvider.signOut();
+    throw error;
+  }
+
+  const profile = opts?.profile;
+
+  if (opts?.purpose === 'signup' && profile) {
+    const extra: {
+      name?: string;
+      email?: string;
+      gender?: Gender | null;
+      dateOfBirth?: string | null;
+      city?: string;
+    } = {};
+
+    if (profile.name?.trim()) extra.name = profile.name.trim();
+    if (profile.email?.trim()) extra.email = profile.email.trim();
+
+    if (profile.gender !== undefined) {
+      extra.gender = profile.gender;
     }
 
-    // Save remaining signup details after the account is created.
-    const profile = opts?.profile;
+    if (profile.dateOfBirth !== undefined) {
+      extra.dateOfBirth = profile.dateOfBirth;
+    }
 
-    if (opts?.purpose === 'signup' && profile) {
+    if (profile.city) {
+      extra.city = profile.city;
+    }
+
+    if (Object.keys(extra).length > 0) {
       try {
-        const extra: {
-          gender?: Gender | null;
-          dateOfBirth?: string | null;
-          city?: string;
-        } = {};
-
-        if (profile.gender !== undefined) {
-          extra.gender = profile.gender;
-        }
-
-        if (profile.dateOfBirth !== undefined) {
-          extra.dateOfBirth = profile.dateOfBirth;
-        }
-
-        if (profile.city) {
-          extra.city = profile.city;
-        }
-
-        if (Object.keys(extra).length > 0) {
-          const updated = await endpoints.updateMe(extra);
-          user = updated.user;
-        }
+        const updated = await endpoints.updateMe(extra);
+        user = updated.user;
       } catch (error) {
-        // Keep the account signed in if optional profile details fail.
-        logger.warn('signup extra profile update failed', {
+        logger.warn('signup profile update failed', {
           message: (error as Error).message,
         });
       }
     }
+  }
 
-    set({
-      status: 'in',
-      user,
-      accountRequest: null,
-      bootError: null,
-    });
+  set({
+    status: 'in',
+    user,
+    accountRequest: null,
+    bootError: null,
+  });
 
-    setMonitoringUser(user);
-    connectRealtime();
-    void registerForPush();
+  setMonitoringUser(user);
+  connectRealtime();
+  void registerForPush();
 
-    return {
-      needsProfile: !user.name,
-    };
-  },
+  return {
+    needsProfile: !user.name,
+  };
+},
+
 
   async refresh() {
     try {

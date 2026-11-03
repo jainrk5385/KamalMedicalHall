@@ -52,6 +52,10 @@ function getNumber(
 export const config = {
   isProd: env.NODE_ENV === 'production',
 
+    testOtpEnabled:
+    env.TEST_OTP_ENABLED?.toLowerCase() === 'true' &&
+    env.NODE_ENV !== 'production',
+
   port: getNumber(env.PORT, 4000, 'PORT'),
 
   // MongoDB is the only supported database.

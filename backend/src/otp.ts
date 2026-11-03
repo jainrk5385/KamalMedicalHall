@@ -16,29 +16,11 @@ import { SmsError, renderOtp, sendSms, smsSettings } from './sms.js';
 import { OtpCode } from './models/OtpCode.js';
 import { User } from './models/User.js';
 
-/**
- * Login OTP by SMS.
- *
- * sms mode:
- * - Generates a 6-digit OTP.
- * - Stores only its HMAC hash in MongoDB.
- * - Expires after 5 minutes.
- * - Allows a maximum of 5 sends per 10 minutes.
- * - Allows a maximum of 5 incorrect attempts.
- *
- * twilio mode:
- * - Twilio Verify manages OTP generation, delivery and verification.
- *
- * static mode:
- * - Uses 123456 for testing.
- */
-
 export const otpRouter = Router();
 
 type Fetch = typeof fetch;
 let http: Fetch = (...a) => fetch(...a);
 
-/** Tests replace the network call. */
 export const setTwilioFetch = (f: Fetch) => {
   http = f;
 };
@@ -71,9 +53,7 @@ async function twilio(path: string, form: Record<string, string>) {
   return { status: res.status, body };
 }
 
-/** Simple in-memory limits per phone number. */
 const sends = new Map<string, number[]>();
-
 const fails = new Map<string, { n: number; until: number }>();
 
 function allowSend(phone: string): boolean {
@@ -86,23 +66,19 @@ function allowSend(phone: string): boolean {
   if (recent.length >= 5) return false;
 
   sends.set(phone, [...recent, now]);
-
   return true;
 }
 
-/** Fixed test code while OTP delivery is configured as test code. */
 export const STATIC_OTP = '123456';
 
-const purpose = z.enum(['login', 'signup']).optional();
+const purposeSchema = z.enum(['login', 'signup']);
 
 const phoneSchema = z.object({
   phone: z.string().min(10).max(15),
-  purpose,
+  purpose: purposeSchema.optional(),
 });
 
 const OTP_TTL_MS = 5 * 60_000;
-// export const OTP_TTL_MS_EXPORT = OTP_TTL_MS;
-
 const RESEND_AFTER_MS = 30_000;
 const MAX_SENDS_PER_WINDOW = 5;
 const MAX_WRONG = 5;
@@ -112,14 +88,14 @@ const hashCode = (phone: string, code: string) =>
     .update(`otp:${phone}:${code}`)
     .digest('hex');
 
-/** Sign-up requires a new number; login requires an existing account. */
+/** Login requires an existing account; signup requires a new number. */
 async function checkPurpose(
   phone: string,
   p: 'login' | 'signup' | undefined,
 ): Promise<void> {
   if (!p) return;
 
-const exists = await User.exists({ phone });
+  const exists = await User.exists({ phone });
 
   if (p === 'signup' && exists) {
     throw new HttpError(
@@ -147,16 +123,55 @@ async function session(phone: string, prefix: 'tw' | 'sms') {
   };
 }
 
+/** Create the account after successful server-side OTP verification. */
+async function createOrGetUser(
+  phone: string,
+  p: 'login' | 'signup',
+) {
+  await checkPurpose(phone, p);
+
+  let user = await User.findOne({ phone });
+
+  if (!user && p === 'signup') {
+    try {
+      user = await User.create({
+        phone,
+        role: 'customer',
+        name: null,
+        email: null,
+        signedUpAt: new Date(),
+        isActive: true,
+      });
+    } catch (error) {
+      const mongoError = error as { code?: number };
+
+      if (mongoError.code === 11000) {
+        user = await User.findOne({ phone });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  if (!user) {
+    throw new HttpError(404, 'not_registered', 'Please sign up first.');
+  }
+
+  if (!user.isActive) {
+    throw new HttpError(
+      403,
+      'account_disabled',
+      'Your account is currently inactive. Please contact the store.',
+    );
+  }
+
+  return user;
+}
+
 const serverOtp = () =>
   config.authMode === 'twilio' || config.authMode === 'sms';
 
-/**
- * Reserve and persist a new OTP.
- *
- * The conditional upsert enforces the resend cooldown and send window
- * atomically in MongoDB. A duplicate-key error means an existing OTP
- * record did not satisfy the rate-limit conditions.
- */
+/** Generate, store and send an OTP using the configured SMS gateway. */
 async function sendOwnCode(phone: string): Promise<void> {
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   const now = Date.now();
@@ -250,7 +265,6 @@ async function sendOwnCode(phone: string): Promise<void> {
       settings,
     );
   } catch (error) {
-    // Invalidate only the OTP that this request created.
     await OtpCode.updateOne(
       {
         phone,
@@ -283,7 +297,7 @@ async function sendOwnCode(phone: string): Promise<void> {
   }
 }
 
-/** Verify the latest unexpired OTP and consume it on success. */
+/** Verify and consume the latest unexpired OTP. */
 async function checkOwnCode(
   phone: string,
   code: string,
@@ -346,8 +360,6 @@ async function checkOwnCode(
     throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
   }
 
-  // Consume the OTP atomically. A concurrent resend or verification
-  // cannot cause an old OTP to be accepted.
   const consumed = await OtpCode.updateOne(
     {
       phone,
@@ -372,6 +384,7 @@ async function checkOwnCode(
   }
 }
 
+/** Send OTP. */
 otpRouter.post('/send', async (req, res) => {
   if (config.authMode === 'firebase') {
     res.status(409).json({
@@ -404,11 +417,11 @@ otpRouter.post('/send', async (req, res) => {
     const settings = await smsSettings();
 
     if (settings.otpChannel === 'static') {
-      if (config.isProd) {
+      if (!config.testOtpEnabled) {
         throw new HttpError(
           503,
           'otp_unavailable',
-          'SMS verification is not configured for production. Please contact the store.',
+          'Test OTP is disabled. Please configure SMS delivery.',
         );
       }
 
@@ -466,12 +479,14 @@ otpRouter.post('/send', async (req, res) => {
   res.status(204).end();
 });
 
+/** Verify OTP and establish the user session. */
 otpRouter.post('/verify', async (req, res) => {
+  // Firebase verification uses an ID token, not a phone/code pair.
   if (config.authMode === 'firebase') {
     const body = parse(
       z.object({
         idToken: z.string().min(1),
-        purpose: z.enum(['login', 'signup']),
+        purpose: purposeSchema,
         name: z.string().trim().max(100).optional(),
         email: z.string().email().optional(),
       }),
@@ -508,11 +523,7 @@ otpRouter.post('/verify', async (req, res) => {
     }
 
     if (!user) {
-      throw new HttpError(
-        404,
-        'not_registered',
-        'Please sign up first.',
-      );
+      throw new HttpError(404, 'not_registered', 'Please sign up first.');
     }
 
     if (!user.isActive) {
@@ -543,10 +554,12 @@ otpRouter.post('/verify', async (req, res) => {
     throw new HttpError(404, 'not_found', 'Not found');
   }
 
+  // Server OTP verification accepts phone, code and purpose.
   const body = parse(
     z.object({
       phone: z.string().min(10).max(15),
       code: z.string().regex(/^\d{4,8}$/),
+      purpose: purposeSchema.default('login'),
     }),
     req.body,
   );
@@ -558,11 +571,11 @@ otpRouter.post('/verify', async (req, res) => {
     const settings = await smsSettings();
 
     if (settings.otpChannel === 'static') {
-      if (config.isProd) {
+      if (!config.testOtpEnabled) {
         throw new HttpError(
           503,
           'otp_unavailable',
-          'SMS verification is not configured for production. Please contact the store.',
+          'Test OTP is disabled. Please configure SMS delivery.',
         );
       }
 
@@ -595,10 +608,14 @@ otpRouter.post('/verify', async (req, res) => {
       await checkOwnCode(phone, body.code);
     }
 
+    await createOrGetUser(phone, body.purpose);
+    invalidateUser(phone);
+
     res.json(await session(phone, 'sms'));
     return;
   }
 
+  // Twilio verification.
   if (
     failedAttempts &&
     failedAttempts.n >= MAX_WRONG &&
@@ -645,6 +662,9 @@ otpRouter.post('/verify', async (req, res) => {
   }
 
   fails.delete(phone);
+
+  await createOrGetUser(phone, body.purpose);
+  invalidateUser(phone);
 
   res.json(await session(phone, 'tw'));
 });
