@@ -374,12 +374,14 @@ async function checkOwnCode(
 
 otpRouter.post('/send', async (req, res) => {
   if (config.authMode === 'firebase') {
-  res.json({
-    provider: 'firebase',
-    message: 'Send OTP using Firebase Phone Authentication in the app.',
-  });
-  return;
-}
+    res.status(409).json({
+      code: 'firebase_client_auth_required',
+      provider: 'firebase',
+      message:
+        'Use Firebase Phone Authentication in the mobile app to send OTP.',
+    });
+    return;
+  }
 
   if (!serverOtp()) {
     throw new HttpError(404, 'not_found', 'Not found');
@@ -465,61 +467,78 @@ otpRouter.post('/send', async (req, res) => {
 });
 
 otpRouter.post('/verify', async (req, res) => {
-
   if (config.authMode === 'firebase') {
-  const body = parse(
-    z.object({
-      idToken: z.string().min(1),
-      purpose: z.enum(['login', 'signup']).optional(),
-      name: z.string().trim().max(100).optional(),
-      email: z.string().email().optional(),
-    }),
-    req.body,
-  );
-
-  const verifiedUser = await verifyToken(body.idToken);
-  const phone = verifiedUser.phone;
-
-  await checkPurpose(phone, body.purpose);
-
-  let user = await User.findOne({ phone });
-
-  if (!user && body.purpose === 'signup') {
-    user = await User.create({
-      phone,
-      firebaseUid: verifiedUser.uid,
-      role: 'customer',
-      name: body.name ?? null,
-      email: body.email ?? null,
-      signedUpAt: new Date(),
-      isActive: true,
-    });
-  }
-
-  if (!user) {
-    throw new HttpError(
-      404,
-      'not_registered',
-      'Please sign up first.',
+    const body = parse(
+      z.object({
+        idToken: z.string().min(1),
+        purpose: z.enum(['login', 'signup']),
+        name: z.string().trim().max(100).optional(),
+        email: z.string().email().optional(),
+      }),
+      req.body,
     );
+
+    const verifiedUser = await verifyToken(body.idToken);
+    const phone = normalisePhone(verifiedUser.phone);
+
+    await checkPurpose(phone, body.purpose);
+
+    let user = await User.findOne({ phone });
+
+    if (!user && body.purpose === 'signup') {
+      try {
+        user = await User.create({
+          phone,
+          firebaseUid: verifiedUser.uid,
+          role: 'customer',
+          name: body.name ?? null,
+          email: body.email ?? null,
+          signedUpAt: new Date(),
+          isActive: true,
+        });
+      } catch (error) {
+        const mongoError = error as { code?: number };
+
+        if (mongoError.code === 11000) {
+          user = await User.findOne({ phone });
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    if (!user) {
+      throw new HttpError(
+        404,
+        'not_registered',
+        'Please sign up first.',
+      );
+    }
+
+    if (!user.isActive) {
+      throw new HttpError(
+        403,
+        'account_disabled',
+        'Your account is currently inactive. Please contact the store.',
+      );
+    }
+
+    invalidateUser(phone);
+
+    res.json({
+      token: body.idToken,
+      user: {
+        id: user._id.toString(),
+        phone: user.phone,
+        role: user.role,
+        name: user.name ?? null,
+        email: user.email ?? null,
+      },
+    });
+
+    return;
   }
 
-  invalidateUser(phone);
-
-  res.json({
-    token: body.idToken,
-    user: {
-      id: user._id.toString(),
-      phone: user.phone,
-      role: user.role,
-      name: user.name ?? null,
-      email: user.email ?? null,
-    },
-  });
-
-  return;
-}
-  
   if (!serverOtp()) {
     throw new HttpError(404, 'not_found', 'Not found');
   }
@@ -568,11 +587,7 @@ otpRouter.post('/verify', async (req, res) => {
           until: Date.now() + 10 * 60_000,
         });
 
-        throw new HttpError(
-          401,
-          'invalid_otp',
-          'Incorrect OTP',
-        );
+        throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
       }
 
       fails.delete(phone);
@@ -626,11 +641,7 @@ otpRouter.post('/verify', async (req, res) => {
       until: Date.now() + 10 * 60_000,
     });
 
-    throw new HttpError(
-      401,
-      'invalid_otp',
-      'Incorrect OTP',
-    );
+    throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
   }
 
   fails.delete(phone);

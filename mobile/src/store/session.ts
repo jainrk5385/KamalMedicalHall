@@ -1,3 +1,4 @@
+
 import { create } from 'zustand';
 import { ApiError, configureApi } from '../api/client';
 import { endpoints } from '../api/endpoints';
@@ -7,24 +8,29 @@ import { setLanguage } from '../localization';
 import { registerForPush, unregisterPush } from '../push';
 import { setMonitoringUser } from '../monitoring';
 import { connectRealtime, disconnectRealtime } from '../realtime';
+import { logger } from '../core/logging';
 
 interface SessionState {
   status: 'loading' | 'out' | 'in';
   user: User | null;
-  /** The customer's latest deactivate / reactivate request (shown on the account screens). */
   accountRequest: AccountRequest | null;
-  /** Set when the backend could not be reached while restoring a saved session. */
   bootError: string | null;
   bootstrap: () => Promise<void>;
-  /** Called after OTP: exchanges the verified token for the server-side account and role (and, for sign-up, creates it). */
-  login: (token: string, opts?: { purpose?: 'login' | 'signup'; profile?: SignupProfile }) => Promise<{ needsProfile: boolean }>;
-  /** Reloads the signed-in user and their account request (after a request was sent, or the admin decided one). */
+  login: (
+    token: string,
+    opts?: { purpose?: 'login' | 'signup'; profile?: SignupProfile }
+  ) => Promise<{ needsProfile: boolean }>;
   refresh: () => Promise<void>;
-  updateProfile: (b: { name?: string; email?: string; language?: 'en' | 'hi'; gender?: Gender | null; dateOfBirth?: string | null; city?: string }) => Promise<void>;
-  /** Sets (publicId) or removes (null) the profile picture. */
+  updateProfile: (b: {
+    name?: string;
+    email?: string;
+    language?: 'en' | 'hi';
+    gender?: Gender | null;
+    dateOfBirth?: string | null;
+    city?: string;
+  }) => Promise<void>;
   setAvatar: (publicId: string | null) => Promise<void>;
   logout: () => Promise<void>;
-  /** Permanently deletes the signed-in customer's account (server enforces the rules), then signs out. */
   deleteAccount: () => Promise<void>;
 }
 
@@ -33,71 +39,180 @@ export const useSession = create<SessionState>((set, get) => ({
   user: null,
   accountRequest: null,
   bootError: null,
+
   async bootstrap() {
     set({ status: 'loading', bootError: null });
+
     const token = await otpProvider.getToken();
-    if (!token) return set({ status: 'out', user: null });
+
+    if (!token) {
+      set({ status: 'out', user: null });
+      return;
+    }
+
     try {
-      // Render's free API instance can take 50+ seconds to wake after idling.
-      // Bound session restoration to one wait so a broken socket cannot trap the app on its splash.
-      const { user, accountRequest } = await endpoints.me({ timeoutMs: 65_000, retry: 'never' });
-      set({ status: 'in', user, accountRequest: accountRequest ?? null });
+      const { user, accountRequest } = await endpoints.me({
+        timeoutMs: 65_000,
+        retry: 'never',
+      });
+
+      set({
+        status: 'in',
+        user,
+        accountRequest: accountRequest ?? null,
+      });
+
       setMonitoringUser(user);
       connectRealtime();
       void registerForPush();
     } catch (error) {
-      if (error instanceof ApiError && !error.isNetwork) return set({ status: 'out', user: null });
-      set({ status: 'out', bootError: (error as Error).message });
+      if (error instanceof ApiError && !error.isNetwork) {
+        await otpProvider.signOut();
+        set({ status: 'out', user: null });
+        return;
+      }
+
+      set({
+        status: 'out',
+        bootError: (error as Error).message,
+      });
     }
   },
+
   async login(token, opts) {
-    let res;
+    let user: User;
+
     try {
-      res = await endpoints.session(token, opts);
-    } catch (e) {
-      await otpProvider.signOut(); // the number was not allowed here (not registered / already registered): start over
-      throw e;
+      // Firebase ID token is verified by backend here.
+      const res = await endpoints.session(token, opts);
+      user = res.user;
+    } catch (error) {
+      await otpProvider.signOut();
+      throw error;
     }
-    const { user, needsProfile } = res;
-    set({ status: 'in', user, accountRequest: null, bootError: null });
+
+    // Save remaining signup details after the account is created.
+    const profile = opts?.profile;
+
+    if (opts?.purpose === 'signup' && profile) {
+      try {
+        const extra: {
+          gender?: Gender | null;
+          dateOfBirth?: string | null;
+          city?: string;
+        } = {};
+
+        if (profile.gender !== undefined) {
+          extra.gender = profile.gender;
+        }
+
+        if (profile.dateOfBirth !== undefined) {
+          extra.dateOfBirth = profile.dateOfBirth;
+        }
+
+        if (profile.city) {
+          extra.city = profile.city;
+        }
+
+        if (Object.keys(extra).length > 0) {
+          const updated = await endpoints.updateMe(extra);
+          user = updated.user;
+        }
+      } catch (error) {
+        // Keep the account signed in if optional profile details fail.
+        logger.warn('signup extra profile update failed', {
+          message: (error as Error).message,
+        });
+      }
+    }
+
+    set({
+      status: 'in',
+      user,
+      accountRequest: null,
+      bootError: null,
+    });
+
     setMonitoringUser(user);
     connectRealtime();
     void registerForPush();
-    return { needsProfile };
+
+    return {
+      needsProfile: !user.name,
+    };
   },
+
   async refresh() {
     try {
       const { user, accountRequest } = await endpoints.me();
-      set({ user, accountRequest: accountRequest ?? null });
-    } catch { /* keep what we have */ }
+
+      set({
+        user,
+        accountRequest: accountRequest ?? null,
+      });
+    } catch {
+      // Keep existing session state.
+    }
   },
+
   async updateProfile(b) {
     const { user } = await endpoints.updateMe(b);
+
     set({ user });
-    if (b.language) await setLanguage(b.language);
+
+    if (b.language) {
+      await setLanguage(b.language);
+    }
   },
+
   async setAvatar(publicId) {
-    const { user } = publicId ? await endpoints.setAvatar(publicId) : await endpoints.removeAvatar();
+    const { user } = publicId
+      ? await endpoints.setAvatar(publicId)
+      : await endpoints.removeAvatar();
+
     set({ user });
   },
+
   async logout() {
     await unregisterPush();
     setMonitoringUser(null);
     await otpProvider.signOut();
-    disconnectRealtime(); // after the token is gone, so the connection carries on anonymously
-    set({ status: 'out', user: null, accountRequest: null });
+    disconnectRealtime();
+
+    set({
+      status: 'out',
+      user: null,
+      accountRequest: null,
+    });
   },
+
   async deleteAccount() {
-    await endpoints.deleteAccount(); // the server already removed this phone's push token with the account
+    await endpoints.deleteAccount();
     await otpProvider.signOut();
     disconnectRealtime();
-    set({ status: 'out', user: null });
+
+    set({
+      status: 'out',
+      user: null,
+      accountRequest: null,
+    });
   },
 }));
 
 configureApi({
   getToken: () => otpProvider.getToken(),
+
   refreshToken: () => otpProvider.refreshToken(),
-  onUnauthorized: () => { if (useSession.getState().status === 'in') void useSession.getState().logout(); },
-  onDeactivated: () => { if (useSession.getState().user?.isActive !== false) void useSession.getState().refresh(); },
+
+  onUnauthorized: () => {
+    if (useSession.getState().status === 'in') {
+      void useSession.getState().logout();
+    }
+  },
+
+  onDeactivated: () => {
+    if (useSession.getState().user?.isActive !== false) {
+      void useSession.getState().refresh();
+    }
+  },
 });
