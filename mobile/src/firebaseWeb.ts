@@ -5,7 +5,7 @@ import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
  * phone sign-in when the server is not sending OTPs itself). These values are public by design: they identify the
  * project, they do not grant access. EXPO_PUBLIC_FIREBASE_WEB_CONFIG can override them.
  */
-const firebaseConfig = {
+const DEFAULT_CONFIG = {
   apiKey: "AIzaSyBrwWR7Nwz44QONv2UNAfgryxURKMm_So4",
   authDomain: "kamal-medical-hall-814c9.firebaseapp.com",
   projectId: "kamal-medical-hall-814c9",
