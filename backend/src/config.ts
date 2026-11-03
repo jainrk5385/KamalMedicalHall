@@ -50,11 +50,12 @@ function getNumber(
 }
 
 export const config = {
-  isProd: env.NODE_ENV === 'production',
+ isProd: env.NODE_ENV === 'production',
 
-    testOtpEnabled:
+  testOtpEnabled:
     env.TEST_OTP_ENABLED?.toLowerCase() === 'true' &&
     env.NODE_ENV !== 'production',
+
 
   port: getNumber(env.PORT, 4000, 'PORT'),
 
