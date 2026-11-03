@@ -19,21 +19,21 @@ export interface NewOrderInput {
 export const endpoints = {
   config: () => api<StoreConfig>('GET', '/config', undefined, { auth: false }),
   terms: () => api<Terms>('GET', '/terms', undefined, { auth: false }),
-devLogin: (
-  phone: string,
-  otp: string,
-  purpose: 'login' | 'signup'
-) =>
-  api<{ token: string; user: User }>(
-    'POST',
-    '/auth/otp/dev-login',
-    { phone, otp, purpose },
-    {
-      auth: false,
-      retry: 'never',
-      timeoutMs: 65_000,
-    }
-  ),
+
+  devLogin: (
+    phone: string,
+    otp: string,
+    purpose: 'login' | 'signup' = 'login'
+  ) =>
+    api<{ token: string }>(
+      'POST',
+      '/auth/otp/dev-login',
+      { phone, otp, purpose },
+      {
+        auth: false,
+        retry: 'never',
+      }
+    ),
   session: (
   idToken: string,
   b?: { purpose?: 'login' | 'signup'; profile?: SignupProfile }

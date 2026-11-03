@@ -63,50 +63,32 @@ export const serverProvider = (firebase?: OtpProvider): OtpProvider => {
   };
 };
 
+
 export const autoProvider = (firebase: OtpProvider): OtpProvider => {
-  const server = serverProvider(firebase);
-  let active: OtpProvider = firebase;
+  const dev = devProvider();
 
   return {
-    get mode() {
-      return active.mode;
+    mode: 'dev',
+
+    sendOtp(phone, purpose) {
+      return dev.sendOtp(phone, purpose);
     },
 
-    async sendOtp(phone, purpose) {
-      const { authMode } = await api<{ authMode?: string }>(
-        'GET',
-        '/config',
-        undefined,
-        { auth: false, retry: 'never', timeoutMs: AUTH_REQUEST_TIMEOUT_MS }
-      );
-
-      if (serverOtpModes.includes(authMode ?? '')) {
-        active = server;
-      } else if (authMode === 'firebase') {
-        active = firebase;
-      } else {
-        throw new ApiError(
-          503,
-          'auth_mode_unavailable',
-          GENERIC_MESSAGES.otpUnavailable
-        );
-      }
-
-      return active.sendOtp(phone, purpose);
+    confirmOtp(code) {
+      return dev.confirmOtp(code);
     },
 
-    confirmOtp: (code) => active.confirmOtp(code),
-
-    async getToken() {
-      return (await server.getToken()) ?? firebase.getToken();
+    getToken() {
+      return dev.getToken();
     },
 
-    async refreshToken() {
-      return (await server.getToken()) ? null : firebase.refreshToken();
+    refreshToken() {
+      return dev.refreshToken();
     },
 
-    async signOut() {
-      await Promise.all([server.signOut(), firebase.signOut()]);
+    signOut() {
+      return dev.signOut();
     },
   };
 };
+
