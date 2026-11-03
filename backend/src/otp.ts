@@ -2,6 +2,7 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
+import { signDevToken } from './auth.js';
 import {
   createFirebaseSession,
   firebaseSessions,
@@ -167,6 +168,58 @@ async function createOrGetUser(
 
   return user;
 }
+
+
+/**
+ * Development-only static OTP login and registration.
+ * OTP: 123456
+ */
+otpRouter.post('/dev-login', async (req, res) => {
+  if (config.authMode !== 'dev' || config.isProd) {
+    throw new HttpError(
+      404,
+      'not_found',
+      'Not found'
+    );
+  }
+
+  const body = parse(
+    z.object({
+      phone: z.string().min(10).max(15),
+      otp: z.string().length(6),
+      purpose: purposeSchema,
+    }),
+    req.body
+  );
+
+  const phone = normalisePhone(body.phone);
+
+  if (body.otp !== STATIC_OTP) {
+    throw new HttpError(
+      401,
+      'invalid_otp',
+      'Incorrect OTP'
+    );
+  }
+
+  const user = await createOrGetUser(
+    phone,
+    body.purpose
+  );
+
+  invalidateUser(phone);
+
+  res.json({
+    token: signDevToken(phone),
+    user: {
+      id: user._id.toString(),
+      phone: user.phone,
+      role: user.role,
+      name: user.name ?? null,
+      email: user.email ?? null,
+    },
+  });
+});
 
 const serverOtp = () =>
   config.authMode === 'twilio' || config.authMode === 'sms';
