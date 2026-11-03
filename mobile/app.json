@@ -15,7 +15,7 @@
       }
     },
     "android": {
-      "package": "com.kamalmedicalhall.preview",
+      "package": "com.kamalmedicalhall.production",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
