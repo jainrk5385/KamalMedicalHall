@@ -5,13 +5,14 @@ import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
  * phone sign-in when the server is not sending OTPs itself). These values are public by design: they identify the
  * project, they do not grant access. EXPO_PUBLIC_FIREBASE_WEB_CONFIG can override them.
  */
-const DEFAULT_CONFIG = {
-  apiKey: 'AIzaSyCqSkB3Ip3ubgB3Cw4cFJdBzw12B6DIxOA',
-  authDomain: 'kamal-medical-hall.firebaseapp.com',
-  projectId: 'kamal-medical-hall',
-  storageBucket: 'kamal-medical-hall.firebasestorage.app',
-  messagingSenderId: '623487847396',
-  appId: '1:623487847396:web:4ce00811447c2d482ad5f1',
+const firebaseConfig = {
+  apiKey: "AIzaSyBrwWR7Nwz44QONv2UNAfgryxURKMm_So4",
+  authDomain: "kamal-medical-hall-814c9.firebaseapp.com",
+  projectId: "kamal-medical-hall-814c9",
+  storageBucket: "kamal-medical-hall-814c9.firebasestorage.app",
+  messagingSenderId: "185387922819",
+  appId: "1:185387922819:web:91d8b4e6357a00f09e72b6",
+  measurementId: "G-P3TD622WC4"
 };
 
 function readConfig(): Record<string, string> {
