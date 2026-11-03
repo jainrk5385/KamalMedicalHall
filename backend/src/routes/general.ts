@@ -304,6 +304,9 @@ general.patch('/me', authed, async (req, res) => {
 
 // ---- Addresses -------------------------------------------------------------
 
+
+ // ---- Addresses -------------------------------------------------------------
+
 const addressSchema = z.object({
   label: z.enum(['home', 'office', 'other']).default('home'),
   recipientName: z.string().trim().min(2).max(80),
@@ -341,12 +344,17 @@ async function assertServiceable(pincode: string) {
 }
 
 general.get('/addresses', authed, async (req, res) => {
-  const rows = await Address.find({ userId: req.user!.id }).sort({ createdAt: 1 }).lean();
+  const rows = await Address.find({ userId: req.user!.id })
+    .sort({ createdAt: 1 })
+    .lean();
+
   res.json({ addresses: rows.map(addressView) });
 });
 
+// Create address
 general.post('/addresses', authed, async (req, res) => {
   const a = parse(addressSchema, req.body);
+
   await assertServiceable(a.pincode);
 
   const address = await Address.create({
@@ -358,22 +366,31 @@ general.post('/addresses', authed, async (req, res) => {
     line2: a.line2 ?? null,
     landmark: a.landmark ?? null,
     pincode: a.pincode,
+    city: null,
     latitude: a.latitude ?? null,
     longitude: a.longitude ?? null,
   });
 
-  res.status(201).json({ address: addressView(address) });
+  res.status(201).json({
+    address: addressView(address),
+  });
 });
 
+// Update address
 general.put('/addresses/:id', authed, async (req, res) => {
   const a = parse(addressSchema, req.body);
 
-  if (!validId(String(req.params.id))) throw notFound('Address not found');
+  if (!validId(String(req.params.id))) {
+    throw notFound('Address not found');
+  }
 
   await assertServiceable(a.pincode);
 
   const address = await Address.findOneAndUpdate(
-    { _id: req.params.id, userId: req.user!.id },
+    {
+      _id: req.params.id,
+      userId: req.user!.id,
+    },
     {
       $set: {
         label: a.label,
@@ -383,30 +400,44 @@ general.put('/addresses/:id', authed, async (req, res) => {
         line2: a.line2 ?? null,
         landmark: a.landmark ?? null,
         pincode: a.pincode,
+        city: null,
         latitude: a.latitude ?? null,
         longitude: a.longitude ?? null,
       },
     },
-    { returnDocument: 'after', runValidators: true },
+    {
+      returnDocument: 'after',
+      runValidators: true,
+    },
   );
 
-  if (!address) throw notFound('Address not found');
+  if (!address) {
+    throw notFound('Address not found');
+  }
 
-  res.json({ address: addressView(address) });
+  res.json({
+    address: addressView(address),
+  });
 });
 
+// Delete address
 general.delete('/addresses/:id', authed, async (req, res) => {
-  if (!validId(String(req.params.id))) throw notFound('Address not found');
+  if (!validId(String(req.params.id))) {
+    throw notFound('Address not found');
+  }
 
   const result = await Address.deleteOne({
     _id: req.params.id,
     userId: req.user!.id,
   });
 
-  if (!result.deletedCount) throw notFound('Address not found');
+  if (!result.deletedCount) {
+    throw notFound('Address not found');
+  }
 
   res.status(204).end();
 });
+
 
 // ---- Uploads ---------------------------------------------------------------
 

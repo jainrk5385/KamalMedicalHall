@@ -9,7 +9,7 @@ export interface IAddress extends Document {
   line2: string | null;
   landmark: string | null;
   pincode: string;
-  city: string;
+  city: string | null;
   latitude: number | null;
   longitude: number | null;
   createdAt: Date;
@@ -25,50 +25,60 @@ const AddressSchema = new Schema<IAddress>(
       required: true,
       index: true,
     },
+
     recipientName: {
       type: String,
       required: true,
       trim: true,
     },
+
     label: {
-  type: String,
-  default: null,
-  trim: true,
-},
+      type: String,
+      default: null,
+      trim: true,
+    },
+
     phone: {
       type: String,
       required: true,
       trim: true,
     },
+
     line1: {
       type: String,
       required: true,
       trim: true,
     },
+
     line2: {
       type: String,
       default: null,
       trim: true,
     },
+
     landmark: {
       type: String,
       default: null,
       trim: true,
     },
+
     pincode: {
       type: String,
       required: true,
       match: /^\d{6}$/,
     },
+
     city: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
     },
+
     latitude: {
       type: Number,
       default: null,
     },
+
     longitude: {
       type: Number,
       default: null,

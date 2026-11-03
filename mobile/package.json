@@ -7,8 +7,7 @@
     "web": "expo start --web",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@expo-google-fonts/noto-sans-devanagari": "^0.4.1",

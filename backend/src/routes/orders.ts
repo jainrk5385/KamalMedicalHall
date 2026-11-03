@@ -205,7 +205,7 @@ orders.post('/', authed, requireRole('customer'), async (req, res) => {
   line2: snapshot.line2 ?? undefined,
   landmark: snapshot.landmark ?? undefined,
   pincode: snapshot.pincode,
-  city: snapshot.city,
+  city: snapshot.city ?? undefined,
   latitude: snapshot.latitude,
 }).catch(() => undefined);
   }
