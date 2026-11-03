@@ -7,6 +7,8 @@ import {
   firebaseSessions,
   normalisePhone,
   signSessionToken,
+  verifyToken,
+  invalidateUser,
 } from './auth.js';
 import { config } from './config.js';
 import { HttpError, parse } from './http.js';
@@ -371,6 +373,14 @@ async function checkOwnCode(
 }
 
 otpRouter.post('/send', async (req, res) => {
+  if (config.authMode === 'firebase') {
+  res.json({
+    provider: 'firebase',
+    message: 'Send OTP using Firebase Phone Authentication in the app.',
+  });
+  return;
+}
+
   if (!serverOtp()) {
     throw new HttpError(404, 'not_found', 'Not found');
   }
@@ -455,6 +465,61 @@ otpRouter.post('/send', async (req, res) => {
 });
 
 otpRouter.post('/verify', async (req, res) => {
+
+  if (config.authMode === 'firebase') {
+  const body = parse(
+    z.object({
+      idToken: z.string().min(1),
+      purpose: z.enum(['login', 'signup']).optional(),
+      name: z.string().trim().max(100).optional(),
+      email: z.string().email().optional(),
+    }),
+    req.body,
+  );
+
+  const verifiedUser = await verifyToken(body.idToken);
+  const phone = verifiedUser.phone;
+
+  await checkPurpose(phone, body.purpose);
+
+  let user = await User.findOne({ phone });
+
+  if (!user && body.purpose === 'signup') {
+    user = await User.create({
+      phone,
+      firebaseUid: verifiedUser.uid,
+      role: 'customer',
+      name: body.name ?? null,
+      email: body.email ?? null,
+      signedUpAt: new Date(),
+      isActive: true,
+    });
+  }
+
+  if (!user) {
+    throw new HttpError(
+      404,
+      'not_registered',
+      'Please sign up first.',
+    );
+  }
+
+  invalidateUser(phone);
+
+  res.json({
+    token: body.idToken,
+    user: {
+      id: user._id.toString(),
+      phone: user.phone,
+      role: user.role,
+      name: user.name ?? null,
+      email: user.email ?? null,
+    },
+  });
+
+  return;
+}
+  
   if (!serverOtp()) {
     throw new HttpError(404, 'not_found', 'Not found');
   }
