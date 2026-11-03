@@ -1,4 +1,3 @@
-
 import express, { Router } from 'express';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
@@ -37,7 +36,7 @@ import {
 } from '../services.js';
 
 import { Address } from '../models/Address.js';
-import { Order } from '../models/Order.js';
+import { Order, generateOrderNumber } from '../models/Order.js';
 import { Payment } from '../models/Payment.js';
 import { StoreSettings } from '../models/StoreSettings.js';
 import DeliveryPartner from '../models/DeliveryPartner.js';
@@ -159,9 +158,12 @@ orders.post('/', authed, requireRole('customer'), async (req, res) => {
       };
     }
 
+        const orderNumber = await generateOrderNumber();
+
     const [order] = await Order.create(
       [
         {
+          orderNumber,
           customerId: user.id,
           kind: 'prescription',
           note: b.note ?? null,
