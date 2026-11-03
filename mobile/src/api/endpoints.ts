@@ -20,7 +20,25 @@ export const endpoints = {
   config: () => api<StoreConfig>('GET', '/config', undefined, { auth: false }),
   terms: () => api<Terms>('GET', '/terms', undefined, { auth: false }),
   devLogin: (phone: string, otp: string) => api<{ token: string }>('POST', '/auth/dev-login', { phone, otp }, { auth: false }),
-  session: (token: string, b?: { purpose?: 'login' | 'signup'; profile?: SignupProfile }) => api<{ user: User; needsProfile: boolean }>('POST', '/auth/session', b, { token, timeoutMs: 65_000, retry: 'never' }),
+  session: (
+  idToken: string,
+  b?: { purpose?: 'login' | 'signup'; profile?: SignupProfile }
+) =>
+  api<{ token: string; user: User }>(
+    'POST',
+    '/auth/otp/verify',
+    {
+      idToken,
+      purpose: b?.purpose ?? 'login',
+      ...(b?.profile?.name ? { name: b.profile.name.trim() } : {}),
+      ...(b?.profile?.email ? { email: b.profile.email.trim() } : {}),
+    },
+    {
+      auth: false,
+      retry: 'never',
+      timeoutMs: 65_000,
+    }
+  ),
   me: (options?: { timeoutMs?: number; retry?: 'never' }) => api<{ user: User; accountRequest: AccountRequest | null }>('GET', '/me', undefined, options),
   accountRequests: () => api<{ requests: AccountRequest[] }>('GET', '/account/requests'),
   requestAccountChange: (b: { kind: AccountRequest['kind']; reason: string; details?: string }) => api<{ request: AccountRequest }>('POST', '/account/requests', b, { retry: 'never' }),
