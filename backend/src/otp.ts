@@ -125,9 +125,63 @@ async function session(phone: string, prefix: 'tw' | 'sms') {
 }
 
 /** Create the account after successful server-side OTP verification. */
+// async function createOrGetUser(
+//   phone: string,
+//   p: 'login' | 'signup',
+// ) {
+//   await checkPurpose(phone, p);
+
+//   let user = await User.findOne({ phone });
+
+//   if (!user && p === 'signup') {
+//     try {
+//       user = await User.create({
+//         phone,
+//         role: 'customer',
+//         name: null,
+//         email: null,
+//         signedUpAt: new Date(),
+//         isActive: true,
+//       });
+//     } catch (error) {
+//       const mongoError = error as { code?: number };
+
+//       if (mongoError.code === 11000) {
+//         user = await User.findOne({ phone });
+//       } else {
+//         throw error;
+//       }
+//     }
+//   }
+
+//   if (!user) {
+//     throw new HttpError(404, 'not_registered', 'Please sign up first.');
+//   }
+
+//   if (!user.isActive) {
+//     throw new HttpError(
+//       403,
+//       'account_disabled',
+//       'Your account is currently inactive. Please contact the store.',
+//     );
+//   }
+
+//   return user;
+// }
+
+
+type SignupProfile = {
+  name?: string;
+  email?: string;
+  gender?: 'male' | 'female' | 'other' | null;
+  dateOfBirth?: string | null;
+  city?: string;
+};
+
 async function createOrGetUser(
   phone: string,
   p: 'login' | 'signup',
+  profile?: SignupProfile,
 ) {
   await checkPurpose(phone, p);
 
@@ -138,8 +192,13 @@ async function createOrGetUser(
       user = await User.create({
         phone,
         role: 'customer',
-        name: null,
-        email: null,
+        name: profile?.name?.trim() || null,
+        email: profile?.email?.trim() || null,
+        gender: profile?.gender ?? null,
+        dateOfBirth: profile?.dateOfBirth
+          ? new Date(profile.dateOfBirth)
+          : null,
+        city: profile?.city?.trim() || null,
         signedUpAt: new Date(),
         isActive: true,
       });
@@ -170,17 +229,62 @@ async function createOrGetUser(
 }
 
 
+
 /**
  * Development-only static OTP login and registration.
  * OTP: 123456
  */
+// otpRouter.post('/dev-login', async (req, res) => {
+//   if (config.authMode !== 'dev' || config.isProd) {
+//     throw new HttpError(
+//       404,
+//       'not_found',
+//       'Not found'
+//     );
+//   }
+
+//   const body = parse(
+//     z.object({
+//       phone: z.string().min(10).max(15),
+//       otp: z.string().length(6),
+//       purpose: purposeSchema,
+//     }),
+//     req.body
+//   );
+
+//   const phone = normalisePhone(body.phone);
+
+//   if (body.otp !== STATIC_OTP) {
+//     throw new HttpError(
+//       401,
+//       'invalid_otp',
+//       'Incorrect OTP'
+//     );
+//   }
+
+//   const user = await createOrGetUser(
+//     phone,
+//     body.purpose
+//   );
+
+//   invalidateUser(phone);
+
+//   res.json({
+//     token: signDevToken(phone),
+//     user: {
+//       id: user._id.toString(),
+//       phone: user.phone,
+//       role: user.role,
+//       name: user.name ?? null,
+//       email: user.email ?? null,
+//     },
+//   });
+// });
+
 otpRouter.post('/dev-login', async (req, res) => {
+  // Development-only security check
   if (config.authMode !== 'dev' || config.isProd) {
-    throw new HttpError(
-      404,
-      'not_found',
-      'Not found'
-    );
+    throw new HttpError(404, 'not_found', 'Not found');
   }
 
   const body = parse(
@@ -188,12 +292,21 @@ otpRouter.post('/dev-login', async (req, res) => {
       phone: z.string().min(10).max(15),
       otp: z.string().length(6),
       purpose: purposeSchema,
+
+      profile: z.object({
+        name: z.string().trim().min(2).max(80).optional(),
+        email: z.string().trim().email().max(120).or(z.literal('')).optional(),
+        gender: z.enum(['male', 'female', 'other']).nullable().optional(),
+        dateOfBirth: z.string().nullable().optional(),
+        city: z.string().trim().max(60).optional(),
+      }).optional(),
     }),
     req.body
   );
 
   const phone = normalisePhone(body.phone);
 
+  // Verify static OTP
   if (body.otp !== STATIC_OTP) {
     throw new HttpError(
       401,
@@ -202,10 +315,40 @@ otpRouter.post('/dev-login', async (req, res) => {
     );
   }
 
+  // Validate date of birth
+  if (body.profile?.dateOfBirth) {
+    const dob = new Date(body.profile.dateOfBirth);
+
+    if (Number.isNaN(dob.getTime())) {
+      throw new HttpError(
+        400,
+        'invalid_date',
+        'Invalid date of birth'
+      );
+    }
+  }
+
+  // Create or get user
   const user = await createOrGetUser(
     phone,
-    body.purpose
+    body.purpose,
+    body.purpose === 'signup'
+      ? body.profile
+      : undefined
   );
+
+  // Update user profile for signup
+  if (body.purpose === 'signup' && body.profile) {
+    user.name = body.profile.name?.trim() || null;
+    user.email = body.profile.email?.trim() || null;
+    user.gender = body.profile.gender ?? null;
+    user.dateOfBirth = body.profile.dateOfBirth
+      ? new Date(body.profile.dateOfBirth)
+      : null;
+    user.city = body.profile.city?.trim() || null;
+
+    await user.save();
+  }
 
   invalidateUser(phone);
 
@@ -217,6 +360,9 @@ otpRouter.post('/dev-login', async (req, res) => {
       role: user.role,
       name: user.name ?? null,
       email: user.email ?? null,
+      gender: user.gender ?? null,
+      dateOfBirth: user.dateOfBirth ?? null,
+      city: user.city ?? null,
     },
   });
 });
