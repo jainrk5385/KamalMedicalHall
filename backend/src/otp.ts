@@ -1,3 +1,4 @@
+
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -49,11 +50,14 @@ const hashCode = (phone: string, code: string) =>
 
 function allowSend(phone: string): boolean {
   const now = Date.now();
+
   const recent = (sends.get(phone) ?? []).filter(
     (timestamp) => now - timestamp < 10 * 60_000,
   );
 
-  if (recent.length >= MAX_SENDS_PER_WINDOW) return false;
+  if (recent.length >= MAX_SENDS_PER_WINDOW) {
+    return false;
+  }
 
   sends.set(phone, [...recent, now]);
   return true;
@@ -61,6 +65,7 @@ function allowSend(phone: string): boolean {
 
 function checkFailedAttempts(phone: string): void {
   const failed = fails.get(phone);
+
   if (failed && failed.n >= MAX_WRONG && failed.until > Date.now()) {
     throw new HttpError(
       429,
@@ -70,7 +75,6 @@ function checkFailedAttempts(phone: string): void {
   }
 }
 
-/** Login requires an existing account; signup requires a new number. */
 async function checkPurpose(
   phone: string,
   purpose: 'login' | 'signup' | undefined,
@@ -122,6 +126,7 @@ async function createOrGetUser(
       });
     } catch (error) {
       const mongoError = error as { code?: number };
+
       if (mongoError.code === 11000) {
         user = await User.findOne({ phone });
       } else {
@@ -150,6 +155,7 @@ async function createOrGetUser(
       ? new Date(profile.dateOfBirth)
       : null;
     user.city = profile.city?.trim() || null;
+
     await user.save();
   }
 
@@ -173,7 +179,7 @@ function smsSession(phone: string) {
   return { token: signSessionToken(phone) };
 }
 
-/** Generate, store and send a one-time code through the configured Pearl SMS gateway. */
+/** Generate, store and send OTP through Pearl SMS. */
 async function sendOwnCode(phone: string): Promise<void> {
   const settings = await smsSettings();
 
@@ -250,6 +256,7 @@ async function sendOwnCode(phone: string): Promise<void> {
     );
   } catch (error) {
     const mongoError = error as { code?: number };
+
     if (mongoError.code === 11000) {
       throw new HttpError(
         429,
@@ -257,6 +264,7 @@ async function sendOwnCode(phone: string): Promise<void> {
         'Please wait a moment before asking for another OTP.',
       );
     }
+
     throw error;
   }
 
@@ -371,7 +379,7 @@ async function checkOwnCode(phone: string, code: string): Promise<void> {
   }
 }
 
-/** Send OTP: Pearl SMS in production; static OTP only in non-production test mode. */
+/** Send OTP. Static OTP is only available in non-production test mode. */
 otpRouter.post('/send', async (req, res) => {
   if (config.authMode !== 'sms') {
     throw new HttpError(404, 'not_found', 'Not found');
@@ -414,10 +422,11 @@ otpRouter.post('/send', async (req, res) => {
   }
 
   await sendOwnCode(phone);
+
   res.json({ sent: true, testMode: false });
 });
 
-/** Verify OTP and establish the application session. */
+/** Verify OTP and establish application session. */
 otpRouter.post('/verify', async (req, res) => {
   if (config.authMode !== 'sms') {
     throw new HttpError(404, 'not_found', 'Not found');
@@ -457,10 +466,12 @@ otpRouter.post('/verify', async (req, res) => {
 
     if (body.code !== STATIC_OTP) {
       const failed = fails.get(phone);
+
       fails.set(phone, {
         n: (failed && failed.until > Date.now() ? failed.n : 0) + 1,
         until: Date.now() + 10 * 60_000,
       });
+
       throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
     }
 
@@ -476,5 +487,6 @@ otpRouter.post('/verify', async (req, res) => {
   );
 
   invalidateUser(phone);
+
   res.json({ ...smsSession(phone), user: userPayload(user) });
 });
