@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "185387922819",
+    "project_id": "kamal-medical-hall-814c9",
+    "storage_bucket": "kamal-medical-hall-814c9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:185387922819:android:f6af54b78f8b71d89e72b6",
+        "android_client_info": {
+          "package_name": "com.kamalmedicalhall.production"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLh4w9fktZIuJ-hrneECZo8LL8_waie_o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

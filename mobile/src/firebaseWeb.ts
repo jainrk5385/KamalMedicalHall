@@ -1,8 +1,8 @@
 import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 
 /**
- * The Firebase *web app* ("Kamal Medical Hall Web") used by the website for push notifications (and for Firebase
- * phone sign-in when the server is not sending OTPs itself). These values are public by design: they identify the
+ * The Firebase *web app* ("Kamal Medical Hall Web") used by the website for Firebase Cloud Messaging push notifications.
+ * Phone authentication is handled by the backend OTP API. These values are public by design: they identify the
  * project, they do not grant access. EXPO_PUBLIC_FIREBASE_WEB_CONFIG can override them.
  */
 const DEFAULT_CONFIG = {

@@ -7,7 +7,6 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.kamalmedicalhall.com",
-        "EXPO_PUBLIC_AUTH_MODE": "firebase",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "EXPO_PUBLIC_ENV": "preview"
       }
@@ -16,7 +15,6 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.kamalmedicalhall.com",
-        "EXPO_PUBLIC_AUTH_MODE": "firebase",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "EXPO_PUBLIC_ENV": "production"
       }
@@ -25,7 +23,6 @@
       "extends": "preview",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.kamalmedicalhall.com",
-        "EXPO_PUBLIC_AUTH_MODE": "firebase",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true",
         "EXPO_PUBLIC_ENV": "preview",
         "ENABLE_R8": "true"

@@ -1,5 +1,7 @@
 import SmsSettingsModel from './models/SmsSettings.js';
 
+const PEARL_SMS_URL = 'https://sms.pearlsms.com/public/sms/send';
+
 export interface SmsSettings {
   apiUrl: string;
   senderId: string;
@@ -29,26 +31,40 @@ export async function smsSettings(): Promise<SmsSettings> {
     return cached.value;
   }
 
-  const record = await SmsSettingsModel.findOne({ key: 'default' }).lean();
+  const record = await SmsSettingsModel.findOne({
+    key: 'default',
+  }).lean();
 
   const value: SmsSettings = {
-    apiUrl: record?.apiUrl ?? 'https://sms.pearlsms.com/public/sms/send',
+    // Fixed Pearl SMS endpoint. Never accept a configurable gateway URL.
+    apiUrl: PEARL_SMS_URL,
+
     senderId: record?.senderId ?? '',
     smsType: record?.smsType ?? 'TRANS',
     apiKey: record?.apiKey ?? null,
     otpTemplate: record?.otpTemplate ?? 'Your OTP is {otp}.',
-    otpChannel: record?.otpChannel === 'sms' ? 'sms' : 'static',
+
+    // SMS is the default. Static OTP must be controlled separately
+    // by the non-production test-mode checks in otp.ts.
+    otpChannel: record?.otpChannel === 'static' ? 'static' : 'sms',
+
     updatedAt: record?.updatedAt
       ? new Date(record.updatedAt).toISOString()
       : new Date(0).toISOString(),
   };
 
-  cached = { value, at: Date.now() };
+  cached = {
+    value,
+    at: Date.now(),
+  };
+
   return value;
 }
 
-export const renderOtp = (template: string, code: string): string =>
-  template.replaceAll('{otp}', code);
+export const renderOtp = (
+  template: string,
+  code: string,
+): string => template.replaceAll('{otp}', code);
 
 export class SmsError extends Error {
   constructor(
@@ -77,7 +93,7 @@ export async function sendSms(
   let res: Response;
 
   try {
-    res = await http(s.apiUrl, {
+    res = await http(PEARL_SMS_URL, {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
@@ -95,11 +111,20 @@ export async function sendSms(
   } catch {
     throw new SmsError(
       'unreachable',
-      'The SMS gateway could not be reached',
+      'The Pearl SMS gateway could not be reached',
     );
   }
 
-  const responseText = await res.text();
+  let responseText: string;
+
+  try {
+    responseText = await res.text();
+  } catch {
+    throw new SmsError(
+      'unreachable',
+      'Could not read the Pearl SMS gateway response',
+    );
+  }
 
   let body: {
     status?: string;
@@ -110,7 +135,7 @@ export async function sendSms(
   try {
     body = JSON.parse(responseText);
   } catch {
-    // Some gateways return plain text.
+    // Pearl may return a plain-text response.
   }
 
   const failed =
@@ -128,7 +153,7 @@ export async function sendSms(
 
     console.error(JSON.stringify({
       level: 'error',
-      msg: 'sms not sent',
+      msg: 'Pearl SMS not sent',
       status: res.status,
       reason,
     }));
@@ -138,6 +163,8 @@ export async function sendSms(
 
   return {
     requestId:
-      body.requestid != null ? String(body.requestid) : null,
+      body.requestid != null
+        ? String(body.requestid)
+        : null,
   };
 }

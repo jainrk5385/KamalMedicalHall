@@ -19,7 +19,6 @@ export interface IUser {
   city: string | null;
   isActive: boolean;
   deactivatedAt: Date | null;
-  firebaseUid: string | null;
   signedUpAt: Date | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -108,12 +107,6 @@ const userSchema = new Schema<IUser>(
       default: null,
     },
 
-    firebaseUid: {
-      type: String,
-      trim: true,
-      default: null,
-    },
-
     signedUpAt: {
       type: Date,
       default: null,
@@ -126,16 +119,6 @@ const userSchema = new Schema<IUser>(
 );
 
 userSchema.index({ phone: 1 }, { unique: true });
-
-userSchema.index(
-  { firebaseUid: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      firebaseUid: { $type: 'string' },
-    },
-  },
-);
 
 export const User: Model<IUser> =
   (mongoose.models.User as Model<IUser>) ||

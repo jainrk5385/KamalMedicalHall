@@ -1,15 +1,11 @@
-
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { signDevToken } from './auth.js';
+
 import {
-  createFirebaseSession,
-  firebaseSessions,
+  invalidateUser,
   normalisePhone,
   signSessionToken,
-  verifyToken,
-  invalidateUser,
 } from './auth.js';
 import { config } from './config.js';
 import { HttpError, parse } from './http.js';
@@ -18,57 +14,6 @@ import { OtpCode } from './models/OtpCode.js';
 import { User } from './models/User.js';
 
 export const otpRouter = Router();
-
-type Fetch = typeof fetch;
-let http: Fetch = (...a) => fetch(...a);
-
-export const setTwilioFetch = (f: Fetch) => {
-  http = f;
-};
-
-const base = () =>
-  `https://verify.twilio.com/v2/Services/${config.twilio.verifyServiceSid}`;
-
-const authHeader = () =>
-  `Basic ${Buffer.from(
-    `${config.twilio.accountSid}:${config.twilio.authToken}`,
-  ).toString('base64')}`;
-
-async function twilio(path: string, form: Record<string, string>) {
-  const res = await http(`${base()}${path}`, {
-    method: 'POST',
-    headers: {
-      authorization: authHeader(),
-      'content-type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams(form).toString(),
-    signal: AbortSignal.timeout(15_000),
-  });
-
-  const body = (await res.json().catch(() => ({}))) as {
-    status?: string;
-    code?: number;
-    message?: string;
-  };
-
-  return { status: res.status, body };
-}
-
-const sends = new Map<string, number[]>();
-const fails = new Map<string, { n: number; until: number }>();
-
-function allowSend(phone: string): boolean {
-  const now = Date.now();
-
-  const recent = (sends.get(phone) ?? []).filter(
-    (timestamp) => now - timestamp < 10 * 60_000,
-  );
-
-  if (recent.length >= 5) return false;
-
-  sends.set(phone, [...recent, now]);
-  return true;
-}
 
 export const STATIC_OTP = '123456';
 
@@ -79,26 +24,62 @@ const phoneSchema = z.object({
   purpose: purposeSchema.optional(),
 });
 
+const signupProfileSchema = z.object({
+  name: z.string().trim().min(2).max(80).optional(),
+  email: z.string().trim().email().max(120).or(z.literal('')).optional(),
+  gender: z.enum(['male', 'female', 'other']).nullable().optional(),
+  dateOfBirth: z.string().nullable().optional(),
+  city: z.string().trim().max(60).optional(),
+});
+
+type SignupProfile = z.infer<typeof signupProfileSchema>;
+
 const OTP_TTL_MS = 5 * 60_000;
 const RESEND_AFTER_MS = 30_000;
 const MAX_SENDS_PER_WINDOW = 5;
 const MAX_WRONG = 5;
+
+const sends = new Map<string, number[]>();
+const fails = new Map<string, { n: number; until: number }>();
 
 const hashCode = (phone: string, code: string) =>
   createHmac('sha256', config.jwtSecret)
     .update(`otp:${phone}:${code}`)
     .digest('hex');
 
+function allowSend(phone: string): boolean {
+  const now = Date.now();
+  const recent = (sends.get(phone) ?? []).filter(
+    (timestamp) => now - timestamp < 10 * 60_000,
+  );
+
+  if (recent.length >= MAX_SENDS_PER_WINDOW) return false;
+
+  sends.set(phone, [...recent, now]);
+  return true;
+}
+
+function checkFailedAttempts(phone: string): void {
+  const failed = fails.get(phone);
+  if (failed && failed.n >= MAX_WRONG && failed.until > Date.now()) {
+    throw new HttpError(
+      429,
+      'otp_rate_limited',
+      'Too many wrong attempts. Please request a new OTP in a few minutes.',
+    );
+  }
+}
+
 /** Login requires an existing account; signup requires a new number. */
 async function checkPurpose(
   phone: string,
-  p: 'login' | 'signup' | undefined,
+  purpose: 'login' | 'signup' | undefined,
 ): Promise<void> {
-  if (!p) return;
+  if (!purpose) return;
 
   const exists = await User.exists({ phone });
 
-  if (p === 'signup' && exists) {
+  if (purpose === 'signup' && exists) {
     throw new HttpError(
       409,
       'already_registered',
@@ -106,7 +87,7 @@ async function checkPurpose(
     );
   }
 
-  if (p === 'login' && !exists) {
+  if (purpose === 'login' && !exists) {
     throw new HttpError(
       404,
       'not_registered',
@@ -115,79 +96,16 @@ async function checkPurpose(
   }
 }
 
-async function session(phone: string, prefix: 'tw' | 'sms') {
-  return {
-    token: signSessionToken(phone, prefix),
-    firebaseToken: firebaseSessions()
-      ? await createFirebaseSession(phone)
-      : undefined,
-  };
-}
-
-/** Create the account after successful server-side OTP verification. */
-// async function createOrGetUser(
-//   phone: string,
-//   p: 'login' | 'signup',
-// ) {
-//   await checkPurpose(phone, p);
-
-//   let user = await User.findOne({ phone });
-
-//   if (!user && p === 'signup') {
-//     try {
-//       user = await User.create({
-//         phone,
-//         role: 'customer',
-//         name: null,
-//         email: null,
-//         signedUpAt: new Date(),
-//         isActive: true,
-//       });
-//     } catch (error) {
-//       const mongoError = error as { code?: number };
-
-//       if (mongoError.code === 11000) {
-//         user = await User.findOne({ phone });
-//       } else {
-//         throw error;
-//       }
-//     }
-//   }
-
-//   if (!user) {
-//     throw new HttpError(404, 'not_registered', 'Please sign up first.');
-//   }
-
-//   if (!user.isActive) {
-//     throw new HttpError(
-//       403,
-//       'account_disabled',
-//       'Your account is currently inactive. Please contact the store.',
-//     );
-//   }
-
-//   return user;
-// }
-
-
-type SignupProfile = {
-  name?: string;
-  email?: string;
-  gender?: 'male' | 'female' | 'other' | null;
-  dateOfBirth?: string | null;
-  city?: string;
-};
-
 async function createOrGetUser(
   phone: string,
-  p: 'login' | 'signup',
+  purpose: 'login' | 'signup',
   profile?: SignupProfile,
 ) {
-  await checkPurpose(phone, p);
+  await checkPurpose(phone, purpose);
 
   let user = await User.findOne({ phone });
 
-  if (!user && p === 'signup') {
+  if (!user && purpose === 'signup') {
     try {
       user = await User.create({
         phone,
@@ -204,7 +122,6 @@ async function createOrGetUser(
       });
     } catch (error) {
       const mongoError = error as { code?: number };
-
       if (mongoError.code === 11000) {
         user = await User.findOne({ phone });
       } else {
@@ -225,156 +142,51 @@ async function createOrGetUser(
     );
   }
 
-  return user;
-}
-
-
-
-/**
- * Development-only static OTP login and registration.
- * OTP: 123456
- */
-// otpRouter.post('/dev-login', async (req, res) => {
-//   if (config.authMode !== 'dev' || config.isProd) {
-//     throw new HttpError(
-//       404,
-//       'not_found',
-//       'Not found'
-//     );
-//   }
-
-//   const body = parse(
-//     z.object({
-//       phone: z.string().min(10).max(15),
-//       otp: z.string().length(6),
-//       purpose: purposeSchema,
-//     }),
-//     req.body
-//   );
-
-//   const phone = normalisePhone(body.phone);
-
-//   if (body.otp !== STATIC_OTP) {
-//     throw new HttpError(
-//       401,
-//       'invalid_otp',
-//       'Incorrect OTP'
-//     );
-//   }
-
-//   const user = await createOrGetUser(
-//     phone,
-//     body.purpose
-//   );
-
-//   invalidateUser(phone);
-
-//   res.json({
-//     token: signDevToken(phone),
-//     user: {
-//       id: user._id.toString(),
-//       phone: user.phone,
-//       role: user.role,
-//       name: user.name ?? null,
-//       email: user.email ?? null,
-//     },
-//   });
-// });
-
-otpRouter.post('/dev-login', async (req, res) => {
-  // Development-only security check
-  // if (config.authMode !== 'dev' || config.isProd) {
-  //   throw new HttpError(404, 'not_found', 'Not found');
-  // }
-
-  const body = parse(
-    z.object({
-      phone: z.string().min(10).max(15),
-      otp: z.string().length(6),
-      purpose: purposeSchema,
-
-      profile: z.object({
-        name: z.string().trim().min(2).max(80).optional(),
-        email: z.string().trim().email().max(120).or(z.literal('')).optional(),
-        gender: z.enum(['male', 'female', 'other']).nullable().optional(),
-        dateOfBirth: z.string().nullable().optional(),
-        city: z.string().trim().max(60).optional(),
-      }).optional(),
-    }),
-    req.body
-  );
-
-  const phone = normalisePhone(body.phone);
-
-  // Verify static OTP
-  if (body.otp !== STATIC_OTP) {
-    throw new HttpError(
-      401,
-      'invalid_otp',
-      'Incorrect OTP'
-    );
-  }
-
-  // Validate date of birth
-  if (body.profile?.dateOfBirth) {
-    const dob = new Date(body.profile.dateOfBirth);
-
-    if (Number.isNaN(dob.getTime())) {
-      throw new HttpError(
-        400,
-        'invalid_date',
-        'Invalid date of birth'
-      );
-    }
-  }
-
-  // Create or get user
-  const user = await createOrGetUser(
-    phone,
-    body.purpose,
-    body.purpose === 'signup'
-      ? body.profile
-      : undefined
-  );
-
-  // Update user profile for signup
-  if (body.purpose === 'signup' && body.profile) {
-    user.name = body.profile.name?.trim() || null;
-    user.email = body.profile.email?.trim() || null;
-    user.gender = body.profile.gender ?? null;
-    user.dateOfBirth = body.profile.dateOfBirth
-      ? new Date(body.profile.dateOfBirth)
+  if (purpose === 'signup' && profile) {
+    user.name = profile.name?.trim() || null;
+    user.email = profile.email?.trim() || null;
+    user.gender = profile.gender ?? null;
+    user.dateOfBirth = profile.dateOfBirth
+      ? new Date(profile.dateOfBirth)
       : null;
-    user.city = body.profile.city?.trim() || null;
-
+    user.city = profile.city?.trim() || null;
     await user.save();
   }
 
-  invalidateUser(phone);
+  return user;
+}
 
-  res.json({
-    token: signDevToken(phone),
-    user: {
-      id: user._id.toString(),
-      phone: user.phone,
-      role: user.role,
-      name: user.name ?? null,
-      email: user.email ?? null,
-      gender: user.gender ?? null,
-      dateOfBirth: user.dateOfBirth ?? null,
-      city: user.city ?? null,
-    },
-  });
-});
+function userPayload(user: Awaited<ReturnType<typeof createOrGetUser>>) {
+  return {
+    id: user._id.toString(),
+    phone: user.phone,
+    role: user.role,
+    name: user.name ?? null,
+    email: user.email ?? null,
+    gender: user.gender ?? null,
+    dateOfBirth: user.dateOfBirth ?? null,
+    city: user.city ?? null,
+  };
+}
 
-const serverOtp = () =>
-  config.authMode === 'twilio' || config.authMode === 'sms';
+function smsSession(phone: string) {
+  return { token: signSessionToken(phone) };
+}
 
-/** Generate, store and send an OTP using the configured SMS gateway. */
+/** Generate, store and send a one-time code through the configured Pearl SMS gateway. */
 async function sendOwnCode(phone: string): Promise<void> {
+  const settings = await smsSettings();
+
+  if (settings.otpChannel !== 'sms') {
+    throw new HttpError(
+      503,
+      'otp_unavailable',
+      'SMS OTP is not enabled. Please contact the store.',
+    );
+  }
+
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   const now = Date.now();
-
   const nowDate = new Date(now);
   const windowExpiredBefore = new Date(now - 10 * 60_000);
   const resendAllowedBefore = new Date(now - RESEND_AFTER_MS);
@@ -407,7 +219,6 @@ async function sendOwnCode(phone: string): Promise<void> {
             expiresAt: new Date(now + OTP_TTL_MS),
             attempts: 0,
             lastSentAt: nowDate,
-
             sends: {
               $cond: [
                 {
@@ -420,7 +231,6 @@ async function sendOwnCode(phone: string): Promise<void> {
                 { $add: [{ $ifNull: ['$sends', 0] }, 1] },
               ],
             },
-
             windowStartedAt: {
               $cond: [
                 {
@@ -436,14 +246,10 @@ async function sendOwnCode(phone: string): Promise<void> {
           },
         },
       ],
-      {
-        upsert: true,
-        returnDocument: 'after',
-      },
+      { upsert: true, returnDocument: 'after' },
     );
   } catch (error) {
     const mongoError = error as { code?: number };
-
     if (mongoError.code === 11000) {
       throw new HttpError(
         429,
@@ -451,24 +257,14 @@ async function sendOwnCode(phone: string): Promise<void> {
         'Please wait a moment before asking for another OTP.',
       );
     }
-
     throw error;
   }
 
   try {
-    const settings = await smsSettings();
-
-    await sendSms(
-      phone,
-      renderOtp(settings.otpTemplate, code),
-      settings,
-    );
+    await sendSms(phone, renderOtp(settings.otpTemplate, code), settings);
   } catch (error) {
     await OtpCode.updateOne(
-      {
-        phone,
-        codeHash: hashCode(phone, code),
-      },
+      { phone, codeHash: hashCode(phone, code) },
       {
         $set: {
           expiresAt: new Date(0),
@@ -477,14 +273,11 @@ async function sendOwnCode(phone: string): Promise<void> {
       },
     );
 
-    if (
-      error instanceof SmsError &&
-      error.reason === 'not_configured'
-    ) {
+    if (error instanceof SmsError && error.reason === 'not_configured') {
       throw new HttpError(
         503,
         'otp_unavailable',
-        'OTP login is not set up yet. Please contact the store.',
+        'Pearl SMS is not configured yet. Please contact the store.',
       );
     }
 
@@ -496,11 +289,8 @@ async function sendOwnCode(phone: string): Promise<void> {
   }
 }
 
-/** Verify and consume the latest unexpired OTP. */
-async function checkOwnCode(
-  phone: string,
-  code: string,
-): Promise<void> {
+/** Verify and consume the latest unexpired OTP exactly once. */
+async function checkOwnCode(phone: string, code: string): Promise<void> {
   const row = await OtpCode.findOne({ phone })
     .select('codeHash attempts expiresAt')
     .lean();
@@ -528,9 +318,7 @@ async function checkOwnCode(
         expiresAt: { $gt: new Date() },
         attempts: { $lt: MAX_WRONG },
       },
-      {
-        $inc: { attempts: 1 },
-      },
+      { $inc: { attempts: 1 } },
     );
 
     if (result.modifiedCount === 0) {
@@ -583,19 +371,9 @@ async function checkOwnCode(
   }
 }
 
-/** Send OTP. */
+/** Send OTP: Pearl SMS in production; static OTP only in non-production test mode. */
 otpRouter.post('/send', async (req, res) => {
-  if (config.authMode === 'firebase') {
-    res.status(409).json({
-      code: 'firebase_client_auth_required',
-      provider: 'firebase',
-      message:
-        'Use Firebase Phone Authentication in the mobile app to send OTP.',
-    });
-    return;
-  }
-
-  if (!serverOtp()) {
+  if (config.authMode !== 'sms') {
     throw new HttpError(404, 'not_found', 'Not found');
   }
 
@@ -612,258 +390,91 @@ otpRouter.post('/send', async (req, res) => {
     );
   }
 
-  if (config.authMode === 'sms') {
-    const settings = await smsSettings();
+  const settings = await smsSettings();
 
-    if (settings.otpChannel === 'static') {
-      if (!config.testOtpEnabled) {
-        throw new HttpError(
-          503,
-          'otp_unavailable',
-          'Test OTP is disabled. Please configure SMS delivery.',
-        );
-      }
+  if (config.isProd && settings.otpChannel !== 'sms') {
+    throw new HttpError(
+      503,
+      'otp_unavailable',
+      'Production SMS OTP is not enabled. Please contact the store.',
+    );
+  }
 
-      res.json({ sent: true, testMode: true });
-      return;
+  if (settings.otpChannel === 'static') {
+    if (config.isProd || !config.testOtpEnabled) {
+      throw new HttpError(
+        503,
+        'otp_unavailable',
+        'Test OTP is disabled. Please configure Pearl SMS delivery.',
+      );
     }
 
-    await sendOwnCode(phone);
-
-    res.json({ sent: true, testMode: false });
+    res.json({ sent: true, testMode: true });
     return;
   }
 
-  const result = await twilio('/Verifications', {
-    To: `+91${phone}`,
-    Channel: 'sms',
-  });
-
-  if (result.status >= 400) {
-    console.error(
-      JSON.stringify({
-        level: 'error',
-        msg: 'twilio send failed',
-        status: result.status,
-        twilioCode: result.body.code,
-      }),
-    );
-
-    if (result.body.code === 60203) {
-      throw new HttpError(
-        429,
-        'otp_rate_limited',
-        'Too many OTP requests. Please wait a few minutes and try again.',
-      );
-    }
-
-    if (
-      result.body.code === 60200 ||
-      result.body.code === 21211
-    ) {
-      throw new HttpError(
-        422,
-        'invalid_phone',
-        'Enter a valid 10-digit Indian mobile number',
-      );
-    }
-
-    throw new HttpError(
-      502,
-      'otp_unavailable',
-      'Could not send the OTP right now. Please try again in a moment.',
-    );
-  }
-
-  res.status(204).end();
+  await sendOwnCode(phone);
+  res.json({ sent: true, testMode: false });
 });
 
-/** Verify OTP and establish the user session. */
+/** Verify OTP and establish the application session. */
 otpRouter.post('/verify', async (req, res) => {
-  // Firebase verification uses an ID token, not a phone/code pair.
-  if (config.authMode === 'firebase') {
-    const body = parse(
-      z.object({
-        idToken: z.string().min(1),
-        purpose: purposeSchema,
-        name: z.string().trim().max(100).optional(),
-        email: z.string().email().optional(),
-      }),
-      req.body,
-    );
-
-    const verifiedUser = await verifyToken(body.idToken);
-    const phone = normalisePhone(verifiedUser.phone);
-
-    await checkPurpose(phone, body.purpose);
-
-    let user = await User.findOne({ phone });
-
-    if (!user && body.purpose === 'signup') {
-      try {
-        user = await User.create({
-          phone,
-          firebaseUid: verifiedUser.uid,
-          role: 'customer',
-          name: body.name ?? null,
-          email: body.email ?? null,
-          signedUpAt: new Date(),
-          isActive: true,
-        });
-      } catch (error) {
-        const mongoError = error as { code?: number };
-
-        if (mongoError.code === 11000) {
-          user = await User.findOne({ phone });
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    if (!user) {
-      throw new HttpError(404, 'not_registered', 'Please sign up first.');
-    }
-
-    if (!user.isActive) {
-      throw new HttpError(
-        403,
-        'account_disabled',
-        'Your account is currently inactive. Please contact the store.',
-      );
-    }
-
-    invalidateUser(phone);
-
-    res.json({
-      token: body.idToken,
-      user: {
-        id: user._id.toString(),
-        phone: user.phone,
-        role: user.role,
-        name: user.name ?? null,
-        email: user.email ?? null,
-      },
-    });
-
-    return;
-  }
-
-  if (!serverOtp()) {
+  if (config.authMode !== 'sms') {
     throw new HttpError(404, 'not_found', 'Not found');
   }
 
-  // Server OTP verification accepts phone, code and purpose.
   const body = parse(
     z.object({
       phone: z.string().min(10).max(15),
       code: z.string().regex(/^\d{4,8}$/),
       purpose: purposeSchema.default('login'),
+      profile: signupProfileSchema.optional(),
     }),
     req.body,
   );
 
   const phone = normalisePhone(body.phone);
-  const failedAttempts = fails.get(phone);
+  const settings = await smsSettings();
 
-  if (config.authMode === 'sms') {
-    const settings = await smsSettings();
+  if (config.isProd && settings.otpChannel !== 'sms') {
+    throw new HttpError(
+      503,
+      'otp_unavailable',
+      'Production SMS OTP is not enabled. Please contact the store.',
+    );
+  }
 
-    if (settings.otpChannel === 'static') {
-      if (!config.testOtpEnabled) {
-        throw new HttpError(
-          503,
-          'otp_unavailable',
-          'Test OTP is disabled. Please configure SMS delivery.',
-        );
-      }
-
-      if (
-        failedAttempts &&
-        failedAttempts.n >= MAX_WRONG &&
-        failedAttempts.until > Date.now()
-      ) {
-        throw new HttpError(
-          429,
-          'otp_rate_limited',
-          'Too many wrong attempts. Please request a new OTP in a few minutes.',
-        );
-      }
-
-      if (body.code !== STATIC_OTP) {
-        fails.set(phone, {
-          n:
-            (failedAttempts && failedAttempts.until > Date.now()
-              ? failedAttempts.n
-              : 0) + 1,
-          until: Date.now() + 10 * 60_000,
-        });
-
-        throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
-      }
-
-      fails.delete(phone);
-    } else {
-      await checkOwnCode(phone, body.code);
+  if (settings.otpChannel === 'static') {
+    if (config.isProd || !config.testOtpEnabled) {
+      throw new HttpError(
+        503,
+        'otp_unavailable',
+        'Test OTP is disabled. Please configure Pearl SMS delivery.',
+      );
     }
 
-    await createOrGetUser(phone, body.purpose);
-    invalidateUser(phone);
+    checkFailedAttempts(phone);
 
-    res.json(await session(phone, 'sms'));
-    return;
+    if (body.code !== STATIC_OTP) {
+      const failed = fails.get(phone);
+      fails.set(phone, {
+        n: (failed && failed.until > Date.now() ? failed.n : 0) + 1,
+        until: Date.now() + 10 * 60_000,
+      });
+      throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
+    }
+
+    fails.delete(phone);
+  } else {
+    await checkOwnCode(phone, body.code);
   }
 
-  // Twilio verification.
-  if (
-    failedAttempts &&
-    failedAttempts.n >= MAX_WRONG &&
-    failedAttempts.until > Date.now()
-  ) {
-    throw new HttpError(
-      429,
-      'otp_rate_limited',
-      'Too many wrong attempts. Please request a new OTP in a few minutes.',
-    );
-  }
+  const user = await createOrGetUser(
+    phone,
+    body.purpose,
+    body.purpose === 'signup' ? body.profile : undefined,
+  );
 
-  const result = await twilio('/VerificationCheck', {
-    To: `+91${phone}`,
-    Code: body.code,
-  });
-
-  if (result.status >= 500) {
-    throw new HttpError(
-      502,
-      'otp_unavailable',
-      'Could not verify the OTP right now. Please try again in a moment.',
-    );
-  }
-
-  if (result.status === 404) {
-    throw new HttpError(
-      401,
-      'invalid_otp',
-      'This OTP has expired or was already used. Please request a new one.',
-    );
-  }
-
-  if (result.body.status !== 'approved') {
-    fails.set(phone, {
-      n:
-        (failedAttempts && failedAttempts.until > Date.now()
-          ? failedAttempts.n
-          : 0) + 1,
-      until: Date.now() + 10 * 60_000,
-    });
-
-    throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
-  }
-
-  fails.delete(phone);
-
-  await createOrGetUser(phone, body.purpose);
   invalidateUser(phone);
-
-  res.json(await session(phone, 'tw'));
+  res.json({ ...smsSession(phone), user: userPayload(user) });
 });

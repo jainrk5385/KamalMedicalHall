@@ -6,7 +6,6 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "scheme": "kamalmedicalhall",
     "ios": {
       "supportsTablet": true,
@@ -59,11 +58,6 @@
       "expo-document-picker",
       "@sentry/react-native/expo"
     ],
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "owner": "kamal-medical-hall",
     "extra": {
       "eas": {

@@ -52,6 +52,12 @@ const istStart = (date = new Date()) => {
 
 const todayKey = () => getTodayISTDateKey();
 
+const formatInr = (value: number) =>
+  `₹${new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(value) ? value : 0)}`;
+
 const activeOrderStatuses = [
   'quoted',
   'awaiting_payment',
@@ -204,7 +210,15 @@ adminRouter.get('/orders', async (req, res) => {
 
 adminRouter.post('/orders/:id/quote', async (req, res) => {
   const { amount, bill } = parse(z.object({
-    amount: z.number().positive().max(500000),
+    amount: z.number()
+      .positive()
+      .max(500000)
+      .refine(
+        (value) =>
+          Number.isFinite(value) &&
+          Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
+        'Amount can have at most 2 decimal places.',
+      ),
     bill: z.object({
       publicId: z.string().min(3).max(300),
       mimeType: z.string().min(3).max(120),
@@ -255,7 +269,7 @@ adminRouter.post('/orders/:id/quote', async (req, res) => {
         order.id,
         'quote_ready',
         'Your order amount is ready',
-        `${order.orderNumber}: pay ₹${amount} (free delivery). Please review and accept.`,
+        `${order.orderNumber}: pay ${formatInr(amount)} (free delivery). Please review and accept.`,
         session,
       );
       return;
@@ -293,7 +307,7 @@ await Payment.deleteMany()
       order.id,
       'order_confirmed',
       'Your order is confirmed',
-      `${order.orderNumber}: ₹${amount} (free delivery). Pay on delivery by cash or UPI. The bill is in your order.`,
+      `${order.orderNumber}: ${formatInr(amount)} (free delivery). Pay on delivery by cash or UPI. The bill is in your order.`,
       session,
     );
 
@@ -1971,7 +1985,7 @@ partnerRouter.post('/orders/:id/delivered', async (req, res) => {
     );
 
     const who = req.user!.name ?? 'The delivery partner';
-    const amount = `₹${Math.round(order.quotedAmount ?? 0).toLocaleString('en-IN')}`;
+    const amount = formatInr(order.quotedAmount ?? 0);
 
     if (cod && b.collectedVia === 'cash') {
       await notifyAdmins(

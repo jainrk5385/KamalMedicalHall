@@ -5,10 +5,8 @@ import { z } from 'zod';
 
 import {
   authed,
-  deleteFirebaseUser,
   invalidateUser,
   normalisePhone,
-  signDevToken,
   verified,
 } from '../auth.js';
 import { config } from '../config.js';
@@ -77,7 +75,11 @@ general.get('/config', async (_req, res) => {
   ]);
 
   if (!store) {
-    throw new HttpError(503, 'store_unavailable', 'Store settings are unavailable.');
+    throw new HttpError(
+      503,
+      'store_unavailable',
+      'Store settings are unavailable.',
+    );
   }
 
   res.json({
@@ -101,29 +103,15 @@ general.get('/config', async (_req, res) => {
 
 /** Public terms and conditions. */
 general.get('/terms', async (_req, res) => {
-  const store = await StoreSettings.findOne().select('termsText termsUpdatedAt').lean();
+  const store = await StoreSettings.findOne()
+    .select('termsText termsUpdatedAt')
+    .lean();
 
   res.json({
     text: store?.termsText ?? '',
     updatedAt: store?.termsUpdatedAt ?? null,
   });
 });
-
-// Development only.
-if (config.authMode === 'dev') {
-  general.post('/auth/dev-login', (req, res) => {
-    const { phone, otp } = parse(
-      z.object({ phone: z.string(), otp: z.string() }),
-      req.body,
-    );
-
-    if (otp !== '123456') {
-      throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
-    }
-
-    res.json({ token: signDevToken(normalisePhone(phone)) });
-  });
-}
 
 /** Customer sign-up form. */
 export const profileSchema = z.object({
@@ -148,9 +136,9 @@ export const profileSchema = z.object({
   city: z.string().trim().max(60).optional(),
 });
 
-/** First call after OTP. */
+/** First call after OTP verification. */
 general.post('/auth/session', verified, async (req, res) => {
-  const { uid, phone } = req.verified!;
+  const { phone } = req.verified!;
 
   const b = parse(
     z.object({
@@ -160,7 +148,9 @@ general.post('/auth/session', verified, async (req, res) => {
     req.body ?? {},
   );
 
-  const existing = await User.findOne({ phone }).select('_id role').lean();
+  const existing = await User.findOne({ phone })
+    .select('_id role')
+    .lean();
 
   if (b.purpose === 'login' && !existing) {
     throw new HttpError(
@@ -179,33 +169,34 @@ general.post('/auth/session', verified, async (req, res) => {
   }
 
   if (b.purpose === 'signup' && !b.profile) {
-    throw new HttpError(422, 'validation_error', 'Please fill in the sign-up form.');
+    throw new HttpError(
+      422,
+      'validation_error',
+      'Please fill in the sign-up form.',
+    );
   }
 
   const p = b.purpose === 'signup' ? b.profile : undefined;
 
   const user = await User.findOneAndUpdate(
     { phone },
-    {
-      $set: {
-        firebaseUid: uid,
-      },
-      ...(p
-        ? {
-            $setOnInsert: {
-              role: 'customer',
-              name: p.name,
-              email: p.email || null,
-              gender: p.gender ?? null,
-              dateOfBirth: p.dateOfBirth
-                ? new Date(`${p.dateOfBirth}T00:00:00.000Z`)
-                : null,
-              city: p.city || null,
-              signedUpAt: new Date(),
-            },
-          }
-        : {}),
-    },
+    p
+      ? {
+          $setOnInsert: {
+            role: 'customer',
+            name: p.name,
+            email: p.email || null,
+            gender: p.gender ?? null,
+            dateOfBirth: p.dateOfBirth
+              ? new Date(`${p.dateOfBirth}T00:00:00.000Z`)
+              : null,
+            city: p.city || null,
+            signedUpAt: new Date(),
+          },
+        }
+      : {
+          $set: {},
+        },
     {
       upsert: true,
       returnDocument: 'after',
@@ -213,7 +204,13 @@ general.post('/auth/session', verified, async (req, res) => {
     },
   );
 
-  if (!user) throw new HttpError(500, 'user_creation_failed', 'Could not create user.');
+  if (!user) {
+    throw new HttpError(
+      500,
+      'user_creation_failed',
+      'Could not create user.',
+    );
+  }
 
   if (p) {
     void notifyAdmins(
@@ -232,7 +229,9 @@ general.post('/auth/session', verified, async (req, res) => {
 
 /** Public list of serviceable pincodes. */
 general.get('/pincodes', async (_req, res) => {
-  res.json({ pincodes: [...(await servicePincodes())].sort() });
+  res.json({
+    pincodes: [...(await servicePincodes())].sort(),
+  });
 });
 
 export const accountRequestView = (r: any) => ({
@@ -250,7 +249,9 @@ export const accountRequestView = (r: any) => ({
 general.get('/me', authed, async (req, res) => {
   const [user, request] = await Promise.all([
     User.findById(req.user!.id),
-    AccountRequest.findOne({ userId: req.user!.id }).sort({ createdAt: -1 }).lean(),
+    AccountRequest.findOne({ userId: req.user!.id })
+      .sort({ createdAt: -1 })
+      .lean(),
   ]);
 
   if (!user) throw notFound('User not found');
@@ -283,11 +284,13 @@ general.patch('/me', authed, async (req, res) => {
   if (body.email !== undefined) update.email = body.email || null;
   if (body.language !== undefined) update.language = body.language;
   if (body.gender !== undefined) update.gender = body.gender;
+
   if (body.dateOfBirth !== undefined) {
     update.dateOfBirth = body.dateOfBirth
       ? new Date(`${body.dateOfBirth}T00:00:00.000Z`)
       : null;
   }
+
   if (body.city !== undefined) update.city = body.city || null;
 
   const user = await User.findByIdAndUpdate(
@@ -303,9 +306,6 @@ general.patch('/me', authed, async (req, res) => {
 });
 
 // ---- Addresses -------------------------------------------------------------
-
-
- // ---- Addresses -------------------------------------------------------------
 
 const addressSchema = z.object({
   label: z.enum(['home', 'office', 'other']).default('home'),
@@ -438,7 +438,6 @@ general.delete('/addresses/:id', authed, async (req, res) => {
   res.status(204).end();
 });
 
-
 // ---- Uploads ---------------------------------------------------------------
 
 general.post('/uploads/sign', authed, (req, res) => {
@@ -545,11 +544,16 @@ general.get('/notifications', authed, async (req, res) => {
   ];
 
   const orders = orderIds.length
-    ? await Order.find({ _id: { $in: orderIds } }).select('orderNumber').lean()
+    ? await Order.find({ _id: { $in: orderIds } })
+        .select('orderNumber')
+        .lean()
     : [];
 
   const orderNumbers = new Map(
-    orders.map((o: any) => [o._id.toString(), o.orderNumber]),
+    orders.map((o: any) => [
+      o._id.toString(),
+      o.orderNumber,
+    ]),
   );
 
   res.json({
@@ -611,6 +615,10 @@ general.delete('/notifications/:id', authed, async (req, res) => {
 
 // ---- Devices ---------------------------------------------------------------
 
+/**
+ * Register or update this device's push notification token.
+ * Firebase Cloud Messaging is retained for push delivery.
+ */
 general.post('/devices', authed, async (req, res) => {
   const { token, platform } = parse(
     z.object({
@@ -628,7 +636,11 @@ general.post('/devices', authed, async (req, res) => {
         platform: platform ?? null,
       },
     },
-    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
+    {
+      upsert: true,
+      returnDocument: 'after',
+      setDefaultsOnInsert: true,
+    },
   );
 
   res.status(204).end();
@@ -637,7 +649,9 @@ general.post('/devices', authed, async (req, res) => {
 /** Sign-out: stop this device receiving notifications for this user. */
 general.delete('/devices', authed, async (req, res) => {
   const { token } = parse(
-    z.object({ token: z.string().min(10).max(4096) }),
+    z.object({
+      token: z.string().min(10).max(4096),
+    }),
     req.body,
   );
 
@@ -676,12 +690,12 @@ general.delete('/me', authed, async (req, res) => {
   }
 
   const open = await Order.findOne()
-  .where('customerId')
-  .equals(user.id)
-  .where('status')
-  .in(OPEN_STATUSES)
-  .select('_id')
-  .lean();
+    .where('customerId')
+    .equals(user.id)
+    .where('status')
+    .in(OPEN_STATUSES)
+    .select('_id')
+    .lean();
 
   if (open) {
     throw new HttpError(
@@ -691,7 +705,9 @@ general.delete('/me', authed, async (req, res) => {
     );
   }
 
-  const dbUser = await User.findById(user.id).select('firebaseUid avatarPublicId').lean();
+  const dbUser = await User.findById(user.id)
+    .select('_id')
+    .lean();
 
   if (!dbUser) throw notFound('User not found');
 
@@ -700,7 +716,9 @@ general.delete('/me', authed, async (req, res) => {
     .lean();
 
   const files = orders.flatMap((o: any) =>
-    (o.prescriptions ?? []).map((p: any) => p.publicId).filter(Boolean),
+    (o.prescriptions ?? [])
+      .map((p: any) => p.publicId)
+      .filter(Boolean),
   );
 
   await tx(async (session) => {
@@ -728,7 +746,6 @@ general.delete('/me', authed, async (req, res) => {
         $set: {
           name: null,
           email: null,
-          firebaseUid: null,
           phone: `deleted-${user.id}`,
           avatarPublicId: null,
           avatarResourceType: null,
@@ -747,8 +764,6 @@ general.delete('/me', authed, async (req, res) => {
   if (files.length) {
     await deletePrescriptionFiles(files);
   }
-
-  await deleteFirebaseUser(dbUser.firebaseUid ?? null);
 
   res.status(204).end();
 });

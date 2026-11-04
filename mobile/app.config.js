@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Extends app.json. Firebase native config is added only when the Firebase config files exist,
- * so the project still builds (in dev-auth mode) before the Firebase project files are added.
+ * Extends app.json. Firebase native config is added only when the Firebase config files exist.
+ * Firebase is used for Cloud Messaging and crash reporting; phone authentication is handled by the backend OTP API.
  * Put google-services.json and GoogleService-Info.plist in this folder (see README).
  */
 module.exports = ({ config }) => {
@@ -13,7 +13,7 @@ module.exports = ({ config }) => {
   const hasIos = fs.existsSync(ios);
   const plugins = [...(config.plugins ?? [])];
   if (hasAndroid || hasIos) {
-    plugins.push('@react-native-firebase/app', '@react-native-firebase/auth', '@react-native-firebase/messaging', '@react-native-firebase/crashlytics');
+    plugins.push('@react-native-firebase/app', '@react-native-firebase/messaging', '@react-native-firebase/crashlytics');
   }
   // One entry for both platforms. Android never allows plain-HTTP traffic in a built app; iOS needs static frameworks for Firebase.
   // ENABLE_R8=true (the "hardened" EAS profile) shrinks and obfuscates the native code. The rules keep what Razorpay needs by reflection.
