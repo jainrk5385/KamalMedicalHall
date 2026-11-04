@@ -79,7 +79,6 @@ export const userSchema = new Schema({
   dateOfBirth: Date,
   city: String,
   isActive: { type: Boolean, default: true },
-  firebaseUid: { type: String, unique: true },
   signedUpAt: Date,
 }, { timestamps: true });
 

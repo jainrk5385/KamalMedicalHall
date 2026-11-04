@@ -1,58 +1,70 @@
-
 import { api } from '../api/client';
-import { ApiError, GENERIC_MESSAGES } from '../core/errors/ApiError';
-import { logger } from '../core/logging';
-import { secure, type OtpProvider } from './devProvider';
+import type { SignupProfile } from '../api/types';
+import { secure, type OtpProvider } from './shared';
 
 const SESSION_KEY = 'kmh.sessionToken';
 const AUTH_REQUEST_TIMEOUT_MS = 65_000;
 
-export const serverOtpModes = ['sms', 'twilio'];
+export const serverOtpModes = ['sms'] as const;
 
-export const serverProvider = (firebase?: OtpProvider): OtpProvider => {
+export const serverProvider = (): OtpProvider => {
   let phone = '';
   let purpose: 'login' | 'signup' = 'login';
 
   return {
     mode: 'sms',
 
-    async sendOtp(p, pPurpose) {
-      phone = p;
-      purpose = pPurpose ?? 'login';
+    async sendOtp(value, requestedPurpose) {
+      phone = value;
+      purpose = requestedPurpose ?? 'login';
 
-      await api<void>(
+      const response = await api<{
+        sent: boolean;
+        testMode?: boolean;
+      }>(
         'POST',
         '/auth/otp/send',
         { phone, purpose },
-        { auth: false, retry: 'never', timeoutMs: AUTH_REQUEST_TIMEOUT_MS }
+        {
+          auth: false,
+          retry: 'never',
+          timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+        }
       );
+
+      return {
+        testMode: response.testMode === true,
+      };
     },
 
-    async confirmOtp(code) {
-      const { token, firebaseToken } = await api<{
-        token: string;
-        firebaseToken?: string;
-      }>(
-        'POST',
-        '/auth/otp/verify',
-        { phone, code, purpose },
-        { auth: false, retry: 'never', timeoutMs: AUTH_REQUEST_TIMEOUT_MS }
-      );
-
-      if (firebaseToken && firebase?.signInWithCustomToken) {
-        try {
-          const idToken = await firebase.signInWithCustomToken(firebaseToken);
-          await secure.del(SESSION_KEY);
-          return idToken;
-        } catch (e) {
-          logger.warn('firebase custom sign-in failed; using server session', {
-            code: String((e as { code?: string })?.code ?? 'unknown'),
-          });
-        }
+    async confirmOtp(code, profile?: SignupProfile) {
+      if (!phone) {
+        throw new Error('Please enter your phone number first.');
       }
 
-      await secure.set(SESSION_KEY, token);
-      return token;
+      const response = await api<{ token: string }>(
+        'POST',
+        '/auth/otp/verify',
+        {
+          phone,
+          code,
+          purpose,
+          ...(purpose === 'signup' && profile ? { profile } : {}),
+        },
+        {
+          auth: false,
+          retry: 'never',
+          timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+        }
+      );
+
+      if (!response.token) {
+        throw new Error('OTP verification did not return a session token.');
+      }
+
+      await secure.set(SESSION_KEY, response.token);
+
+      return response.token;
     },
 
     getToken: () => secure.get(SESSION_KEY),
@@ -63,32 +75,4 @@ export const serverProvider = (firebase?: OtpProvider): OtpProvider => {
   };
 };
 
-
-export const autoProvider = (firebase: OtpProvider): OtpProvider => {
-  const dev = devProvider();
-
-  return {
-    mode: 'dev',
-
-    sendOtp(phone, purpose) {
-      return dev.sendOtp(phone, purpose);
-    },
-
-    confirmOtp(code) {
-      return dev.confirmOtp(code);
-    },
-
-    getToken() {
-      return dev.getToken();
-    },
-
-    refreshToken() {
-      return dev.refreshToken();
-    },
-
-    signOut() {
-      return dev.signOut();
-    },
-  };
-};
-
+export const autoProvider = (): OtpProvider => serverProvider();

@@ -11,8 +11,14 @@ import { emitAdmins } from './realtime.js';
 
 const IST_TIME_ZONE = 'Asia/Kolkata';
 
+const roundMoney = (value: number) =>
+  Math.round((Number.isFinite(value) ? value : 0) * 100) / 100;
+
 const inr = (n: number) =>
-  `₹${Math.round(n).toLocaleString('en-IN')}`;
+  `₹${new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(roundMoney(n))}`;
 
 export interface CashPartner {
   partnerId: string;
@@ -79,12 +85,12 @@ export async function cashToCollect(): Promise<{
         orders: [],
       };
 
-    const amount = Number(payment.amount);
+    const amount = roundMoney(Number(payment.amount));
     const collectedAt = payment.collectedAt
       ? payment.collectedAt.toISOString()
       : '';
 
-    partner.total += amount;
+    partner.total = roundMoney(partner.total + amount);
 
     partner.orders.push({
       orderId: payment.orderId._id.toString(),
@@ -107,9 +113,11 @@ export async function cashToCollect(): Promise<{
   partners.sort((a, b) => a.name.localeCompare(b.name));
 
   return {
-    total: partners.reduce((sum, partner) => sum + partner.total, 0),
-    partners,
-  };
+  total: roundMoney(
+    partners.reduce((sum, partner) => sum + partner.total, 0)
+  ),
+  partners,
+};
 }
 
 /**
@@ -200,12 +208,12 @@ export async function todayRevenue() {
     },
   ]);
 
-  return {
-    orders: result?.orders ?? 0,
-    total: Number(result?.total ?? 0),
-    online: Number(result?.online ?? 0),
-    cod: Number(result?.cod ?? 0),
-  };
+return {
+  orders: result?.orders ?? 0,
+  total: roundMoney(Number(result?.total ?? 0)),
+  online: roundMoney(Number(result?.online ?? 0)),
+  cod: roundMoney(Number(result?.cod ?? 0)),
+};
 }
 
 /**
@@ -345,10 +353,12 @@ export async function settleCash(
 
     return {
       settled: settlement.modifiedCount,
-      amount: settledPayments.reduce(
-        (sum, payment) => sum + Number(payment.amount),
-        0
-      ),
+      amount: roundMoney(
+  settledPayments.reduce(
+    (sum, payment) => sum + Number(payment.amount),
+    0
+  )
+),
     };
   });
 }

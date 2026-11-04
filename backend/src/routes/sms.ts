@@ -16,30 +16,41 @@ import {
 
 export const smsAdmin = Router();
 
+const PEARL_SMS_URL = 'https://sms.pearlsms.com/public/sms/send';
+
 smsAdmin.use(authed, requireRole('admin'));
 
 const masked = (key: string | null) =>
   key ? `••••${key.slice(-4)}` : null;
 
+const staticOtpAllowed =
+  !config.isProd && config.testOtpEnabled;
+
 const view = async () => {
   const settings = await smsSettings();
 
+  const effectiveOtpChannel = staticOtpAllowed
+    ? settings.otpChannel
+    : 'sms';
+
   return {
-    apiUrl: settings.apiUrl,
+    apiUrl: PEARL_SMS_URL,
     senderId: settings.senderId,
     smsType: settings.smsType,
     otpTemplate: settings.otpTemplate,
-    otpChannel: settings.otpChannel,
+    otpChannel: effectiveOtpChannel,
+    staticOtpAllowed,
     apiKeySet: Boolean(settings.apiKey),
     apiKeyHint: masked(settings.apiKey),
     updatedAt: settings.updatedAt,
     inUse:
       config.authMode === 'sms' &&
-      settings.otpChannel === 'sms',
+      effectiveOtpChannel === 'sms',
   };
 };
 
-const trimmed = (max: number) => z.string().trim().max(max);
+const trimmed = (max: number) =>
+  z.string().trim().max(max);
 
 const schema = z.object({
   senderId: trimmed(11)
@@ -65,12 +76,9 @@ const schema = z.object({
       'The message must contain {otp} where the code goes',
     ),
 
-  apiUrl: trimmed(300)
-    .regex(
-      /^https:\/\/\S+$/i,
-      'The gateway address must start with https://',
-    )
-    .optional(),
+  // Retained for compatibility with the existing admin app.
+  // The submitted URL is deliberately ignored.
+  apiUrl: trimmed(300).optional(),
 
   otpChannel: z.enum(['static', 'sms']).optional(),
 });
@@ -82,15 +90,19 @@ smsAdmin.get('/sms', async (_req, res) => {
 smsAdmin.put('/sms', async (req, res) => {
   const body = parse(schema, req.body);
 
-  if (config.isProd && body.otpChannel === 'static') {
+  if (
+    body.otpChannel === 'static' &&
+    !staticOtpAllowed
+  ) {
     throw new HttpError(
       400,
       'test_otp_disabled',
-      'Static test OTPs are disabled in production. Configure the SMS gateway instead.',
+      'Static test OTPs are disabled. Enable TEST_OTP_ENABLED in a non-production environment or configure Pearl SMS.',
     );
   }
 
   const update: Record<string, unknown> = {
+    apiUrl: PEARL_SMS_URL,
     senderId: body.senderId,
     smsType: body.smsType,
     otpTemplate: body.otpTemplate,
@@ -101,12 +113,10 @@ smsAdmin.put('/sms', async (req, res) => {
     update.apiKey = body.apiKey;
   }
 
-  if (body.apiUrl !== undefined) {
-    update.apiUrl = body.apiUrl;
-  }
-
   if (body.otpChannel !== undefined) {
     update.otpChannel = body.otpChannel;
+  } else if (!staticOtpAllowed) {
+    update.otpChannel = 'sms';
   }
 
   await SmsSettingsModel.findOneAndUpdate(
@@ -128,7 +138,7 @@ smsAdmin.put('/sms', async (req, res) => {
   res.json(await view());
 });
 
-/** Sends a sample OTP to test the configured SMS gateway. */
+/** Sends a sample OTP to test the configured Pearl SMS gateway. */
 smsAdmin.post('/sms/test', async (req, res) => {
   const body = parse(
     z.object({
@@ -160,8 +170,8 @@ smsAdmin.post('/sms/test', async (req, res) => {
         error.reason === 'not_configured' ? 422 : 502,
         `sms_${error.reason}`,
         error.reason === 'not_configured'
-          ? 'Enter the sender ID and API key first.'
-          : `The SMS gateway said: ${error.message}`,
+          ? 'Enter the Pearl SMS sender ID and API key first.'
+          : `Pearl SMS gateway error: ${error.message}`,
       );
     }
 

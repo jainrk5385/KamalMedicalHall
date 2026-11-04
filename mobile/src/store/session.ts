@@ -2,13 +2,19 @@
 import { create } from 'zustand';
 import { ApiError, configureApi } from '../api/client';
 import { endpoints } from '../api/endpoints';
-import type { AccountRequest, Gender, SignupProfile, User } from '../api/types';
+import type {
+  AccountRequest,
+  Gender,
+  User,
+} from '../api/types';
 import { otpProvider } from '../auth/provider';
 import { setLanguage } from '../localization';
 import { registerForPush, unregisterPush } from '../push';
 import { setMonitoringUser } from '../monitoring';
-import { connectRealtime, disconnectRealtime } from '../realtime';
-import { logger } from '../core/logging';
+import {
+  connectRealtime,
+  disconnectRealtime,
+} from '../realtime';
 
 interface SessionState {
   status: 'loading' | 'out' | 'in';
@@ -16,10 +22,7 @@ interface SessionState {
   accountRequest: AccountRequest | null;
   bootError: string | null;
   bootstrap: () => Promise<void>;
-  login: (
-    token: string,
-    opts?: { purpose?: 'login' | 'signup'; profile?: SignupProfile }
-  ) => Promise<{ needsProfile: boolean }>;
+  login: (token: string) => Promise<{ needsProfile: boolean }>;
   refresh: () => Promise<void>;
   updateProfile: (b: {
     name?: string;
@@ -34,7 +37,7 @@ interface SessionState {
   deleteAccount: () => Promise<void>;
 }
 
-export const useSession = create<SessionState>((set, get) => ({
+export const useSession = create<SessionState>((set) => ({
   status: 'loading',
   user: null,
   accountRequest: null,
@@ -79,89 +82,38 @@ export const useSession = create<SessionState>((set, get) => ({
     }
   },
 
-  
+  async login(_token) {
+    let user: User;
+    let accountRequest: AccountRequest | null = null;
 
-async login(token, opts) {
-  let user: User;
+    try {
+      const res = await endpoints.me({
+        timeoutMs: 65_000,
+        retry: 'never',
+      });
 
-  // try {
-  //   const res = await endpoints.session(token, opts);
-  //   user = res.user;
-  // } catch (error) {
-  //   await otpProvider.signOut();
-  //   throw error;
-  // }
+      user = res.user;
+      accountRequest = res.accountRequest ?? null;
+    } catch (error) {
+      await otpProvider.signOut();
+      throw error;
+    }
 
-  try {
-  if (otpProvider.mode === 'dev') {
-    const res = await endpoints.me({
-      timeoutMs: 65000,
-      retry: 'never',
+    set({
+      status: 'in',
+      user,
+      accountRequest,
+      bootError: null,
     });
-    user = res.user;
-  } else {
-    const res = await endpoints.session(token, opts);
-    user = res.user;
-  }
-} catch (error) {
-  await otpProvider.signOut();
-  throw error;
-}
 
-  const profile = opts?.profile;
+    setMonitoringUser(user);
+    connectRealtime();
+    void registerForPush();
 
-  if (opts?.purpose === 'signup' && profile) {
-    const extra: {
-      name?: string;
-      email?: string;
-      gender?: Gender | null;
-      dateOfBirth?: string | null;
-      city?: string;
-    } = {};
-
-    if (profile.name?.trim()) extra.name = profile.name.trim();
-    if (profile.email?.trim()) extra.email = profile.email.trim();
-
-    if (profile.gender !== undefined) {
-      extra.gender = profile.gender;
-    }
-
-    if (profile.dateOfBirth !== undefined) {
-      extra.dateOfBirth = profile.dateOfBirth;
-    }
-
-    if (profile.city) {
-      extra.city = profile.city;
-    }
-
-    if (Object.keys(extra).length > 0) {
-      try {
-        const updated = await endpoints.updateMe(extra);
-        user = updated.user;
-      } catch (error) {
-        logger.warn('signup profile update failed', {
-          message: (error as Error).message,
-        });
-      }
-    }
-  }
-
-  set({
-    status: 'in',
-    user,
-    accountRequest: null,
-    bootError: null,
-  });
-
-  setMonitoringUser(user);
-  connectRealtime();
-  void registerForPush();
-
-  return {
-    needsProfile: !user.name,
-  };
-},
-
+    return {
+      needsProfile: !user.name,
+    };
+  },
 
   async refresh() {
     try {
@@ -204,11 +156,14 @@ async login(token, opts) {
       status: 'out',
       user: null,
       accountRequest: null,
+      bootError: null,
     });
   },
 
   async deleteAccount() {
     await endpoints.deleteAccount();
+    await unregisterPush();
+    setMonitoringUser(null);
     await otpProvider.signOut();
     disconnectRealtime();
 
@@ -216,6 +171,7 @@ async login(token, opts) {
       status: 'out',
       user: null,
       accountRequest: null,
+      bootError: null,
     });
   },
 }));

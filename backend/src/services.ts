@@ -77,6 +77,67 @@ export function razorpayClient() {
   return razorpay;
 }
 
+export async function verifyRazorpayPayment(
+  paymentId: string,
+  expectedOrderId: string,
+  expectedAmountPaise: number,
+) {
+  if (
+    !Number.isSafeInteger(expectedAmountPaise) ||
+    expectedAmountPaise <= 0
+  ) {
+    throw new HttpError(
+      400,
+      'invalid_payment_amount',
+      'Invalid expected payment amount.',
+    );
+  }
+
+  const payment = await razorpayClient().payments.fetch(paymentId);
+
+  if (payment.id !== paymentId) {
+    throw new HttpError(
+      400,
+      'payment_mismatch',
+      'Payment ID does not match Razorpay records.',
+    );
+  }
+
+  if (payment.order_id !== expectedOrderId) {
+    throw new HttpError(
+      400,
+      'payment_order_mismatch',
+      'Payment does not belong to this order.',
+    );
+  }
+
+  if (payment.currency !== 'INR') {
+    throw new HttpError(
+      400,
+      'payment_currency_mismatch',
+      'Payment currency does not match.',
+    );
+  }
+
+  if (Number(payment.amount) !== expectedAmountPaise) {
+    throw new HttpError(
+      400,
+      'payment_amount_mismatch',
+      'Payment amount does not match the order amount.',
+    );
+  }
+
+  if (payment.status !== 'captured' || payment.captured !== true) {
+    throw new HttpError(
+      409,
+      'payment_not_captured',
+      'Payment has not been captured yet.',
+    );
+  }
+
+  return payment;
+}
+
 const safeEqual = (a: string, b: string) => {
   const x = Buffer.from(a), y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);

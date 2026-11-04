@@ -39,7 +39,7 @@ export interface StoreConfig {
   /** The dates a customer can choose (no times). Before the admin's cut-off time today is included, after it the list starts tomorrow. */
   deliveryDates: string[];
   orderCutoffTime: string;
-  authMode: 'dev' | 'firebase' | 'twilio' | 'sms';
+  authMode: 'sms';
   /** True while the admin has OTP delivery set to the test code 123456 (no SMS is sent). */
   otpTestMode?: boolean;
 }

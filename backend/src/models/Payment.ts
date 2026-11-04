@@ -65,14 +65,16 @@ const paymentSchema = new Schema<IPayment>(
     },
 
     amount: {
-      type: Number,
-      required: true,
-      min: 0,
-      validate: {
-        validator: Number.isInteger,
-        message: 'Payment amount must be an integer',
-      },
-    },
+  type: Number,
+  required: true,
+  min: 0,
+  validate: {
+    validator: (value: number) =>
+      Number.isFinite(value) &&
+      Math.abs(value * 100 - Math.round(value * 100)) < 1e-7,
+    message: 'Payment amount must have no more than 2 decimal places',
+  },
+},
 
     status: {
       type: String,

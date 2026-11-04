@@ -5,36 +5,23 @@ const env: Record<string, string | undefined> = Object.fromEntries(
   Object.entries(process.env).map(([key, value]) => [
     key,
     value?.trim(),
-  ])
+  ]),
 );
 
-const allowedAuthModes = ['dev', 'firebase', 'twilio', 'sms'] as const;
-
-type AuthMode = (typeof allowedAuthModes)[number];
-
-const authModeValue = env.AUTH_MODE ?? 'firebase';
 const configuredCorsOrigins = (env.CORS_ORIGINS ?? '')
   .split(',')
   .map((origin) => origin.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
-// The admin app is hosted on its own production subdomain. Keep it allowed even
-// when an older deployment environment variable only lists the public website.
 const corsOrigins = [...new Set([
   'https://admin.kamalmedicalhall.com',
   ...configuredCorsOrigins,
 ])];
 
-if (!allowedAuthModes.includes(authModeValue as AuthMode)) {
-  throw new Error(
-    `Invalid AUTH_MODE: ${authModeValue}. Allowed values: ${allowedAuthModes.join(', ')}`
-  );
-}
-
 function getNumber(
   value: string | undefined,
   fallback: number,
-  name: string
+  name: string,
 ): number {
   if (value === undefined || value === '') {
     return fallback;
@@ -49,25 +36,27 @@ function getNumber(
   return parsed;
 }
 
+const isProd = env.NODE_ENV === 'production';
+
+// Static OTP is permitted only in non-production test environments.
+const testOtpEnabled =
+  env.TEST_OTP_ENABLED?.toLowerCase() === 'true' &&
+  !isProd;
+
 export const config = {
- isProd: env.NODE_ENV === 'production',
+  isProd,
 
-  testOtpEnabled:
-    env.TEST_OTP_ENABLED?.toLowerCase() === 'true' &&
-    env.NODE_ENV !== 'production',
+  testOtpEnabled,
 
+  // Pearl SMS is the only production OTP provider.
+  authMode: 'sms' as const,
 
   port: getNumber(env.PORT, 4000, 'PORT'),
 
   // MongoDB is the only supported database.
   mongoUrl: env.MONGODB_URI ?? '',
 
-  authMode: authModeValue as AuthMode,
-
   jwtSecret: env.JWT_SECRET ?? '',
-
-  firebaseProjectId: env.FIREBASE_PROJECT_ID ?? '',
-  firebaseServiceAccount: env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
 
   bootstrapAdminPhones: (env.BOOTSTRAP_ADMIN_PHONES ?? '')
     .split(',')
@@ -78,12 +67,6 @@ export const config = {
     cloudName: env.CLOUDINARY_CLOUD_NAME ?? '',
     apiKey: env.CLOUDINARY_API_KEY ?? '',
     apiSecret: env.CLOUDINARY_API_SECRET ?? '',
-  },
-
-  twilio: {
-    accountSid: env.TWILIO_ACCOUNT_SID ?? '',
-    authToken: env.TWILIO_AUTH_TOKEN ?? '',
-    verifyServiceSid: env.TWILIO_VERIFY_SERVICE_SID ?? '',
   },
 
   razorpay: {
@@ -100,18 +83,18 @@ export const config = {
 
   logRequests: env.LOG_REQUESTS
     ? env.LOG_REQUESTS === 'on'
-    : env.NODE_ENV === 'production',
+    : isProd,
 
   minLeadMinutes: getNumber(
     env.MIN_LEAD_MINUTES,
     60,
-    'MIN_LEAD_MINUTES'
+    'MIN_LEAD_MINUTES',
   ),
 
   quoteValidHours: getNumber(
     env.QUOTE_VALID_HOURS,
     24,
-    'QUOTE_VALID_HOURS'
+    'QUOTE_VALID_HOURS',
   ),
 };
 
@@ -132,37 +115,13 @@ if (
   !/^https?:\/\/[\w.-]+(:\d{1,5})?$/.test(config.publicUrl)
 ) {
   throw new Error(
-    'PUBLIC_URL must look like https://api.example.com (no path)'
+    'PUBLIC_URL must look like https://api.example.com (no path)',
   );
 }
 
-if (
-  config.isProd &&
-  config.authMode === 'dev'
-) {
+// Never allow static OTP testing in production.
+if (config.isProd && config.testOtpEnabled) {
   throw new Error(
-    'AUTH_MODE=dev is not allowed when NODE_ENV=production'
-  );
-}
-
-if (
-  config.authMode === 'twilio' &&
-  !(
-    config.twilio.accountSid &&
-    config.twilio.authToken &&
-    config.twilio.verifyServiceSid
-  )
-) {
-  throw new Error(
-    'TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_VERIFY_SERVICE_SID are required when AUTH_MODE=twilio'
-  );
-}
-
-if (
-  config.authMode === 'firebase' &&
-  !config.firebaseProjectId
-) {
-  throw new Error(
-    'FIREBASE_PROJECT_ID is required when AUTH_MODE=firebase'
+    'Static OTP testing is not allowed in production',
   );
 }

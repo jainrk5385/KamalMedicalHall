@@ -32,6 +32,7 @@ import {
   jpgUrl,
   razorpayClient,
   verifyPaymentSignature,
+  verifyRazorpayPayment,
   verifyWebhookSignature,
 } from '../services.js';
 
@@ -516,18 +517,75 @@ orders.post('/:id/accept-quote', authed, requireRole('customer'), async (req, re
     throw conflict('No quote available yet.', 'no_quote');
   }
 
+  const amountPaise = Math.round(Number(order.quotedAmount) * 100);
+
+  if (
+    !Number.isSafeInteger(amountPaise) ||
+    amountPaise <= 0 ||
+    Math.abs(Number(order.quotedAmount) * 100 - amountPaise) > 1e-7
+  ) {
+    throw bad('The quoted amount is invalid.', 'invalid_payment_amount');
+  }
+
   type RzOrder = {
     id: string;
     amount: number;
     currency: string;
   };
 
+  // An already accepted online quote must reuse its existing Razorpay order.
+  // Never create a second payable provider order for the same pending payment.
+  if (order.status === 'awaiting_payment' && paymentMethod === 'razorpay') {
+    const existingPayment = await Payment.findOne({
+      orderId: order.id,
+      method: 'razorpay',
+      status: 'pending',
+      razorpayOrderId: { $type: 'string', $ne: '' },
+    }).lean();
+
+    if (!existingPayment?.razorpayOrderId) {
+      throw conflict(
+        'Your payment setup is still being processed. Please refresh and try again.',
+        'payment_setup_pending',
+      );
+    }
+
+    const razorpayOrder = await razorpayClient().orders.fetch(
+      existingPayment.razorpayOrderId,
+    ) as unknown as RzOrder;
+
+    // Confirm the stored provider order still matches this quote before
+    // returning it to the client for checkout.
+    if (
+      razorpayOrder.id !== existingPayment.razorpayOrderId ||
+      razorpayOrder.amount !== amountPaise ||
+      razorpayOrder.currency !== 'INR'
+    ) {
+      throw new HttpError(
+        409,
+        'payment_order_mismatch',
+        'The existing payment order does not match this quote. Please contact the store.',
+      );
+    }
+
+    res.json({
+      order: await loadOrder(order.id, req.user!),
+      razorpay: {
+        orderId: razorpayOrder.id,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        keyId: config.razorpay.keyId,
+      },
+    });
+    return;
+  }
+
   let razorpayOrder: RzOrder | null = null;
 
   if (paymentMethod === 'razorpay') {
     try {
       razorpayOrder = await razorpayClient().orders.create({
-        amount: Math.round(order.quotedAmount * 100),
+        amount: amountPaise,
         currency: 'INR',
         receipt: order.orderNumber,
       }) as unknown as RzOrder;
@@ -549,13 +607,28 @@ orders.post('/:id/accept-quote', authed, requireRole('customer'), async (req, re
         'Online payment is not available right now. Please try again or choose cash on delivery.',
       );
     }
+
+    if (
+      !razorpayOrder?.id ||
+      razorpayOrder.amount !== amountPaise ||
+      razorpayOrder.currency !== 'INR'
+    ) {
+      throw new HttpError(
+        502,
+        'payment_provider_error',
+        'The payment provider returned an invalid order. Please try again.',
+      );
+    }
   }
 
   await tx(async (session) => {
+    // Only the first request may move a quoted order into payment.
+    // A concurrent request loses this conditional transition and cannot
+    // replace the active payment record.
     await transition(
       session,
       order.id,
-      ['quoted', 'awaiting_payment'],
+      paymentMethod === 'cod' ? ['quoted', 'awaiting_payment'] : ['quoted'],
       paymentMethod === 'cod' ? 'ready_to_dispatch' : 'awaiting_payment',
       req.user!.id,
       {
@@ -564,17 +637,23 @@ orders.post('/:id/accept-quote', authed, requireRole('customer'), async (req, re
       },
     );
 
-await Payment.deleteMany()
-  .where('orderId')
-  .equals(order.id)
-  .where('status')
-  .equals('pending')
-  .session(session);
+    // Keep old records for auditability; mark superseded pending payments
+    // as cancelled instead of deleting payment history.
+    await Payment.updateMany(
+      {
+        orderId: order.id,
+        status: 'pending',
+      },
+      {
+        $set: { status: 'cancelled' },
+      },
+      { session },
+    );
 
     const payment = new Payment({
       orderId: order.id,
       method: paymentMethod,
-      amount: order.quotedAmount,
+      amount: Number(order.quotedAmount),
       status: paymentMethod === 'cod' ? 'cod_pending' : 'pending',
       razorpayOrderId: razorpayOrder?.id ?? null,
     });
@@ -641,8 +720,8 @@ async function markPaid(
 
   if (!payment) throw notFound('Payment not found');
 
-  if (payment.status === 'paid') {
-    return payment.orderId.toString();
+  if (payment.method !== 'razorpay') {
+    throw conflict('This is not an online payment.', 'payment_method_mismatch');
   }
 
   if (
@@ -653,6 +732,20 @@ async function markPaid(
       'Paid amount does not match the order.',
       'amount_mismatch',
     );
+  }
+
+  if (payment.status === 'paid') {
+    if (
+      payment.razorpayPaymentId &&
+      payment.razorpayPaymentId !== paymentId
+    ) {
+      throw conflict(
+        'A different payment has already been recorded for this order.',
+        'payment_id_mismatch',
+      );
+    }
+
+    return payment.orderId.toString();
   }
 
   const updated = await Payment.findOneAndUpdate(
@@ -739,19 +832,20 @@ async function markPaid(
 orders.post('/:id/payment/verify', authed, requireRole('customer'), async (req, res) => {
   const b = parse(
     z.object({
-      razorpayOrderId: z.string(),
-      razorpayPaymentId: z.string(),
-      razorpaySignature: z.string(),
+      razorpayOrderId: z.string().min(1).max(100),
+      razorpayPaymentId: z.string().min(1).max(100),
+      razorpaySignature: z.string().min(1).max(200),
     }),
     req.body,
   );
 
   const order = await loadOrder(String(req.params.id), req.user!);
 
-  const own = await Payment.exists({
+  const own = await Payment.findOne({
     orderId: order.id,
+    method: 'razorpay',
     razorpayOrderId: b.razorpayOrderId,
-  });
+  }).lean();
 
   if (!own) {
     throw bad('Payment does not belong to this order.', 'payment_mismatch');
@@ -767,12 +861,23 @@ orders.post('/:id/payment/verify', authed, requireRole('customer'), async (req, 
     throw bad('Payment could not be verified.', 'bad_signature');
   }
 
+  const expectedAmountPaise = Math.round(Number(own.amount) * 100);
+
+  // A valid checkout signature alone is not enough: independently confirm
+  // the payment's order, amount, currency and captured status with Razorpay.
+  await verifyRazorpayPayment(
+    b.razorpayPaymentId,
+    b.razorpayOrderId,
+    expectedAmountPaise,
+  );
+
   await tx((session) =>
     markPaid(
       session,
       b.razorpayOrderId,
       b.razorpayPaymentId,
       b.razorpaySignature,
+      expectedAmountPaise,
     ),
   );
 

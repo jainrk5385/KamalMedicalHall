@@ -8,6 +8,7 @@ export interface SmsSettings {
   smsType: string;
   otpTemplate: string;
   otpChannel: 'static' | 'sms';
+  staticOtpAllowed: boolean;
   apiKeySet: boolean;
   apiKeyHint: string | null;
   updatedAt: string;
@@ -89,65 +90,6 @@ export const endpoints = {
 
   terms: () =>
     api<Terms>('GET', '/terms', undefined, { auth: false }),
-
-  // Development OTP login and signup
-  devLogin: (
-    phone: string,
-    otp: string,
-    purpose: 'login' | 'signup' = 'login',
-    profile?: SignupProfile
-  ) =>
-    api<{ token: string; user: User }>(
-      'POST',
-      '/auth/otp/dev-login',
-      {
-        phone,
-        otp,
-        purpose,
-        ...(purpose === 'signup' && profile
-          ? {
-              profile: {
-                name: profile.name?.trim(),
-                email: profile.email?.trim() || '',
-                gender: profile.gender ?? null,
-                dateOfBirth: profile.dateOfBirth ?? null,
-                city: profile.city?.trim() || '',
-              },
-            }
-          : {}),
-      },
-      {
-        auth: false,
-        retry: 'never',
-      }
-    ),
-
-  session: (
-    idToken: string,
-    b?: {
-      purpose?: 'login' | 'signup';
-      profile?: SignupProfile;
-    }
-  ) =>
-    api<{ token: string; user: User }>(
-      'POST',
-      '/auth/otp/verify',
-      {
-        idToken,
-        purpose: b?.purpose ?? 'login',
-        ...(b?.profile?.name
-          ? { name: b.profile.name.trim() }
-          : {}),
-        ...(b?.profile?.email
-          ? { email: b.profile.email.trim() }
-          : {}),
-      },
-      {
-        auth: false,
-        retry: 'never',
-        timeoutMs: 65_000,
-      }
-    ),
 
   me: (options?: {
     timeoutMs?: number;
@@ -575,11 +517,13 @@ export const endpoints = {
         '/admin/closing-summary'
       ),
 
-    customer: (id: string) =>
-      api<{ customer: CustomerDetail }>(
-        'GET',
-        `/admin/customers/${id}`
-      ),
+    
+customer: (id: string) =>
+  api<CustomerDetail>(
+    'GET',
+    `/admin/customers/${id}`
+  ),
+
 
     broadcast: (title: string, body: string) =>
       api<{ sent: number }>(

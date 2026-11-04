@@ -5,7 +5,12 @@ export type AuthStackParamList = {
   Welcome: undefined;
   Login: { phone?: string } | undefined;
   Register: { phone?: string } | undefined;
-  OTP: { phone: string; purpose?: 'login' | 'signup'; profile?: SignupProfile };
+OTP: {
+  phone: string;
+  purpose?: 'login' | 'signup';
+  profile?: SignupProfile;
+  testMode?: boolean;
+};
   Legal: undefined;
 };
 

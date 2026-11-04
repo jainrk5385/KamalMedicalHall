@@ -6,6 +6,8 @@ import mongoose, {
   type Types,
 } from 'mongoose';
 
+const PEARL_SMS_URL = 'https://sms.pearlsms.com/public/sms/send';
+
 export interface ISmsSettings extends Document {
   key: string;
   apiUrl: string;
@@ -30,7 +32,8 @@ const SmsSettingsSchema = new Schema<ISmsSettings>(
 
     apiUrl: {
       type: String,
-      default: 'https://sms.pearlsms.com/public/sms/send',
+      default: PEARL_SMS_URL,
+      immutable: true,
     },
 
     senderId: {
@@ -56,7 +59,7 @@ const SmsSettingsSchema = new Schema<ISmsSettings>(
     otpChannel: {
       type: String,
       enum: ['static', 'sms'],
-      default: 'static',
+      default: 'sms',
     },
 
     updatedBy: {

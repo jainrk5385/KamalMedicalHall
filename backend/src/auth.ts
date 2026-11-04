@@ -1,9 +1,13 @@
 
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { cert, initializeApp, type App } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getMessaging } from 'firebase-admin/messaging';
+import {
+  cert,
+  getApps,
+  initializeApp,
+  type App,
+} from 'firebase-admin/app';
+import { getMessaging, type Messaging } from 'firebase-admin/messaging';
 
 import { config } from './config.js';
 import { User } from './models/User.js';
@@ -32,38 +36,88 @@ declare module 'express-serve-static-core' {
   }
 }
 
-let firebaseApp: App | undefined;
+/**
+ * Firebase Cloud Messaging initialization.
+ *
+ * FCM is retained only for push notifications.
+ * Firebase Phone Authentication is not used here.
+ */
+let messagingInstance: Messaging | null = null;
+let firebaseAppInstance: App | null = null;
 
-function firebase(): App {
-  if (!firebaseApp) {
-    firebaseApp = initializeApp(
-      config.firebaseServiceAccount
-        ? {
-            credential: cert(
-              JSON.parse(config.firebaseServiceAccount)
-            ),
-            projectId: config.firebaseProjectId,
-          }
-        : {
-            projectId: config.firebaseProjectId,
-          }
-    );
+function firebaseApp(): App | null {
+  if (firebaseAppInstance) {
+    return firebaseAppInstance;
   }
 
-  return firebaseApp;
+  const serviceAccountJson =
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '';
+
+  const projectId =
+    process.env.FIREBASE_PROJECT_ID ?? '';
+
+  if (
+    !serviceAccountJson ||
+    process.env.PUSH === 'off' ||
+    process.env.NODE_ENV === 'test'
+  ) {
+    return null;
+  }
+
+  try {
+    const serviceAccount = JSON.parse(serviceAccountJson);
+
+    const existingApp = getApps().find(
+      (app) => app.name === 'kamal-medical-hall-push',
+    );
+
+    firebaseAppInstance =
+      existingApp ??
+      initializeApp(
+        {
+          credential: cert(serviceAccount),
+          ...(projectId ? { projectId } : {}),
+        },
+        'kamal-medical-hall-push',
+      );
+
+    return firebaseAppInstance;
+  } catch (error) {
+    console.error(
+      'Firebase push initialization failed:',
+      error,
+    );
+
+    return null;
+  }
 }
 
 /**
- * Push notifications are disabled during automated tests.
+ * Returns Firebase Messaging for push notifications.
  */
-const pushOff = () =>
-  process.env.PUSH === 'off' ||
-  process.env.NODE_TEST_CONTEXT !== undefined;
+export function firebaseMessaging(): Messaging | null {
+  if (messagingInstance) {
+    return messagingInstance;
+  }
 
-export const firebaseMessaging = () =>
-  config.firebaseServiceAccount && !pushOff()
-    ? getMessaging(firebase())
-    : null;
+  const app = firebaseApp();
+
+  if (!app) {
+    return null;
+  }
+
+  try {
+    messagingInstance = getMessaging(app);
+    return messagingInstance;
+  } catch (error) {
+    console.error(
+      'Firebase Messaging initialization failed:',
+      error,
+    );
+
+    return null;
+  }
+}
 
 /**
  * Normalize Indian phone numbers.
@@ -85,7 +139,7 @@ export function normalisePhone(raw: string): string {
     throw new HttpError(
       422,
       'invalid_phone',
-      'Enter a valid 10-digit Indian mobile number'
+      'Enter a valid 10-digit Indian mobile number',
     );
   }
 
@@ -93,148 +147,56 @@ export function normalisePhone(raw: string): string {
 }
 
 /**
- * Verify Firebase ID tokens or application JWT session tokens.
+ * Sign a session token after Pearl SMS OTP verification.
+ */
+export function signSessionToken(phone: string): string {
+  const normalizedPhone = normalisePhone(phone);
+
+  return jwt.sign(
+    {
+      sub: `sms-${normalizedPhone}`,
+      phone: normalizedPhone,
+    },
+    config.jwtSecret,
+    {
+      expiresIn: '30d',
+    },
+  );
+}
+
+/**
+ * Verify application JWT session tokens only.
+ * Firebase Phone Authentication tokens are not accepted.
  */
 export async function verifyToken(
-  token: string
+  token: string,
 ): Promise<{ uid: string; phone: string }> {
-  if (config.authMode !== 'firebase') {
-    try {
-      const payload = jwt.verify(
-        token,
-        config.jwtSecret
-      ) as {
-        sub: string;
-        phone: string;
-      };
+  const payload = jwt.verify(
+    token,
+    config.jwtSecret,
+  ) as {
+    sub?: string;
+    phone?: string;
+  };
 
-      if (!payload.sub || !payload.phone) {
-        throw new Error('Invalid session token payload');
-      }
-
-      return {
-        uid: payload.sub,
-        phone: normalisePhone(payload.phone),
-      };
-    } catch (error) {
-      // Older app versions may still use Firebase ID tokens.
-      if (
-        config.authMode === 'dev' ||
-        !config.firebaseProjectId
-      ) {
-        throw error;
-      }
-    }
+  if (
+    typeof payload.sub !== 'string' ||
+    typeof payload.phone !== 'string' ||
+    !payload.sub.startsWith('sms-')
+  ) {
+    throw new Error('Invalid SMS session token');
   }
 
-  const decoded = await getAuth(firebase()).verifyIdToken(token);
+  const phone = normalisePhone(payload.phone);
 
-  const phone =
-    decoded.phone_number ??
-    (typeof decoded.phone === 'string'
-      ? decoded.phone
-      : '');
-
-  if (!phone) {
-    throw new Error('No phone number on token');
+  if (payload.sub !== `sms-${phone}`) {
+    throw new Error('Session phone mismatch');
   }
 
   return {
-    uid: decoded.uid,
-    phone: normalisePhone(phone),
-  };
-}
-
-/**
- * Remove Firebase identity so a phone number can be registered again.
- */
-export async function deleteFirebaseUser(
-  uid: string | null
-): Promise<void> {
-  if (
-    !uid ||
-    !config.firebaseServiceAccount ||
-    /^(dev|tw|sms)-/.test(uid)
-  ) {
-    return;
-  }
-
-  try {
-    await getAuth(firebase()).deleteUser(uid);
-  } catch (error) {
-    console.error('Firebase deleteUser failed:', error);
-  }
-}
-
-/**
- * Sign a session token after OTP verification.
- */
-export function signSessionToken(
-  phone: string,
-  prefix: 'tw' | 'sms' = 'tw'
-): string {
-  return jwt.sign(
-    {
-      sub: `${prefix}-${phone}`,
-      phone,
-    },
-    config.jwtSecret,
-    {
-      expiresIn: '30d',
-    }
-  );
-}
-
-/**
- * Firebase custom-token sessions.
- */
-export const firebaseSessions = () =>
-  Boolean(config.firebaseServiceAccount) &&
-  config.authMode !== 'dev' &&
-  (
-    process.env.NODE_TEST_CONTEXT === undefined ||
-    process.env.FIREBASE_SESSIONS === 'on'
-  );
-
-/**
- * Create Firebase custom token after server-side OTP verification.
- */
-export async function createFirebaseSession(
-  phone: string
-): Promise<string> {
-  const auth = getAuth(firebase());
-
-  let uid = `ph_${phone}`;
-
-  try {
-    const existingUser = await auth.getUserByPhoneNumber(
-      `+91${phone}`
-    );
-
-    uid = existingUser.uid;
-  } catch {
-    // No phone-auth user exists yet.
-  }
-
-  return auth.createCustomToken(uid, {
+    uid: payload.sub,
     phone,
-  });
-}
-
-/**
- * Development session token.
- */
-export function signDevToken(phone: string): string {
-  return jwt.sign(
-    {
-      sub: `dev-${phone}`,
-      phone,
-    },
-    config.jwtSecret,
-    {
-      expiresIn: '30d',
-    }
-  );
+  };
 }
 
 /**
@@ -244,7 +206,7 @@ export function signDevToken(phone: string): string {
 export async function verified(
   req: Request,
   _res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   const header = req.headers.authorization;
 
@@ -252,7 +214,7 @@ export async function verified(
     throw new HttpError(
       401,
       'unauthenticated',
-      'Please sign in'
+      'Please sign in',
     );
   }
 
@@ -262,7 +224,7 @@ export async function verified(
     throw new HttpError(
       401,
       'invalid_token',
-      'Your session has expired. Please sign in again.'
+      'Your session has expired. Please sign in again.',
     );
   }
 
@@ -291,8 +253,7 @@ export const invalidateUser = (phone?: string): void => {
 };
 
 /**
- * Convert MongoDB User document fields into the existing
- * AuthUser structure used throughout the application.
+ * Convert MongoDB User document fields into AuthUser.
  */
 function mapAuthUser(user: {
   _id: { toString(): string };
@@ -339,12 +300,12 @@ function allowedWhileDeactivated(req: Request): boolean {
 }
 
 /**
- * Verify token and load the MongoDB user.
+ * Verify SMS session token and load MongoDB user.
  */
 export async function authed(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   await verified(req, res, () => undefined);
 
@@ -362,14 +323,13 @@ export async function authed(
       throw new HttpError(
         403,
         'account_deactivated',
-        'Your account is deactivated. You can ask the store to activate it again.'
+        'Your account is deactivated. You can ask the store to activate it again.',
       );
     }
 
     return next();
   }
 
-  // MongoDB lookup using Mongoose.
   const dbUser = await User.findOne({
     phone,
   })
@@ -391,7 +351,7 @@ export async function authed(
     throw new HttpError(
       401,
       'no_account',
-      'Account not found. Please sign in again.'
+      'Account not found. Please sign in again.',
     );
   }
 
@@ -415,7 +375,7 @@ export async function authed(
     throw new HttpError(
       403,
       'account_deactivated',
-      'Your account is deactivated. You can ask the store to activate it again.'
+      'Your account is deactivated. You can ask the store to activate it again.',
     );
   }
 
@@ -430,7 +390,7 @@ export const requireRole =
   (
     req: Request,
     _res: Response,
-    next: NextFunction
+    next: NextFunction,
   ): void => {
     if (!req.user || !roles.includes(req.user.role)) {
       throw forbidden();

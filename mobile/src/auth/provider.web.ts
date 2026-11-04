@@ -1,3 +1,4 @@
-import { devProvider, type OtpProvider } from './devProvider';
+import type { OtpProvider } from './shared';
+import { serverProvider } from './serverProvider';
 
-export const otpProvider: OtpProvider = devProvider();
+export const otpProvider: OtpProvider = serverProvider();
