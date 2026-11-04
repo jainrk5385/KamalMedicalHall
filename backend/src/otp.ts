@@ -16,8 +16,6 @@ import { User } from './models/User.js';
 
 export const otpRouter = Router();
 
-export const STATIC_OTP = '123456';
-
 const purposeSchema = z.enum(['login', 'signup']);
 
 const phoneSchema = z.object({
@@ -41,7 +39,6 @@ const MAX_SENDS_PER_WINDOW = 5;
 const MAX_WRONG = 5;
 
 const sends = new Map<string, number[]>();
-const fails = new Map<string, { n: number; until: number }>();
 
 const hashCode = (phone: string, code: string) =>
   createHmac('sha256', config.jwtSecret)
@@ -61,18 +58,6 @@ function allowSend(phone: string): boolean {
 
   sends.set(phone, [...recent, now]);
   return true;
-}
-
-function checkFailedAttempts(phone: string): void {
-  const failed = fails.get(phone);
-
-  if (failed && failed.n >= MAX_WRONG && failed.until > Date.now()) {
-    throw new HttpError(
-      429,
-      'otp_rate_limited',
-      'Too many wrong attempts. Please request a new OTP in a few minutes.',
-    );
-  }
 }
 
 async function checkPurpose(
@@ -187,7 +172,7 @@ async function sendOwnCode(phone: string): Promise<void> {
     throw new HttpError(
       503,
       'otp_unavailable',
-      'SMS OTP is not enabled. Please contact the store.',
+      'Pearl SMS OTP is not enabled. Please configure SMS settings.',
     );
   }
 
@@ -261,7 +246,7 @@ async function sendOwnCode(phone: string): Promise<void> {
       throw new HttpError(
         429,
         'otp_rate_limited',
-        'Please wait a moment before asking for another OTP.',
+        'Please wait before requesting another OTP.',
       );
     }
 
@@ -285,14 +270,14 @@ async function sendOwnCode(phone: string): Promise<void> {
       throw new HttpError(
         503,
         'otp_unavailable',
-        'Pearl SMS is not configured yet. Please contact the store.',
+        'Pearl SMS is not configured. Please configure SMS credentials.',
       );
     }
 
     throw new HttpError(
       502,
       'otp_unavailable',
-      'Could not send the OTP right now. Please try again in a moment.',
+      'Could not send OTP. Please try again.',
     );
   }
 }
@@ -379,12 +364,8 @@ async function checkOwnCode(phone: string, code: string): Promise<void> {
   }
 }
 
-/** Send OTP. Static OTP is only available in non-production test mode. */
+/** Send OTP through Pearl SMS in every environment. */
 otpRouter.post('/send', async (req, res) => {
-  if (config.authMode !== 'sms') {
-    throw new HttpError(404, 'not_found', 'Not found');
-  }
-
   const body = parse(phoneSchema, req.body);
   const phone = normalisePhone(body.phone);
 
@@ -398,40 +379,13 @@ otpRouter.post('/send', async (req, res) => {
     );
   }
 
-  const settings = await smsSettings();
-
-  if (config.isProd && settings.otpChannel !== 'sms') {
-    throw new HttpError(
-      503,
-      'otp_unavailable',
-      'Production SMS OTP is not enabled. Please contact the store.',
-    );
-  }
-
-  if (settings.otpChannel === 'static') {
-    if (config.isProd || !config.testOtpEnabled) {
-      throw new HttpError(
-        503,
-        'otp_unavailable',
-        'Test OTP is disabled. Please configure Pearl SMS delivery.',
-      );
-    }
-
-    res.json({ sent: true, testMode: true });
-    return;
-  }
-
   await sendOwnCode(phone);
 
   res.json({ sent: true, testMode: false });
 });
 
-/** Verify OTP and establish application session. */
+/** Verify SMS OTP and establish application session. */
 otpRouter.post('/verify', async (req, res) => {
-  if (config.authMode !== 'sms') {
-    throw new HttpError(404, 'not_found', 'Not found');
-  }
-
   const body = parse(
     z.object({
       phone: z.string().min(10).max(15),
@@ -443,42 +397,8 @@ otpRouter.post('/verify', async (req, res) => {
   );
 
   const phone = normalisePhone(body.phone);
-  const settings = await smsSettings();
 
-  if (config.isProd && settings.otpChannel !== 'sms') {
-    throw new HttpError(
-      503,
-      'otp_unavailable',
-      'Production SMS OTP is not enabled. Please contact the store.',
-    );
-  }
-
-  if (settings.otpChannel === 'static') {
-    if (config.isProd || !config.testOtpEnabled) {
-      throw new HttpError(
-        503,
-        'otp_unavailable',
-        'Test OTP is disabled. Please configure Pearl SMS delivery.',
-      );
-    }
-
-    checkFailedAttempts(phone);
-
-    if (body.code !== STATIC_OTP) {
-      const failed = fails.get(phone);
-
-      fails.set(phone, {
-        n: (failed && failed.until > Date.now() ? failed.n : 0) + 1,
-        until: Date.now() + 10 * 60_000,
-      });
-
-      throw new HttpError(401, 'invalid_otp', 'Incorrect OTP');
-    }
-
-    fails.delete(phone);
-  } else {
-    await checkOwnCode(phone, body.code);
-  }
+  await checkOwnCode(phone, body.code);
 
   const user = await createOrGetUser(
     phone,
