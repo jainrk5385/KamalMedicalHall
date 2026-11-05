@@ -9,14 +9,10 @@ on:
       - "mobile/**"
       - ".github/workflows/android.yml"
 
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "mobile/**"
-      - ".github/workflows/android.yml"
-
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   android-build:
@@ -62,7 +58,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EAS_ACCESS_TOKEN }}
 
-      # 6. Extract EAS Build ID
+      # 6. Extract Build ID
       - name: Extract EAS Build ID
         id: build
         run: |
@@ -84,30 +80,52 @@ jobs:
           ")
 
           echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
-          echo "EAS Build ID: $BUILD_ID"
+          echo "Build ID: $BUILD_ID"
 
-      # 7. Download APK from EAS
+      # 7. Download APK and capture actual file path
       - name: Download Kamal Medical Hall APK
         run: |
+          set -euo pipefail
+
+          echo "Downloading APK from EAS..."
+
           npx eas-cli@latest build:download \
             --build-id "${{ steps.build.outputs.build_id }}" \
-            --non-interactive
+            --non-interactive 2>&1 | tee download.log
 
-          APK=$(find . -maxdepth 1 -type f -name "*.apk" | head -n 1)
+          DOWNLOAD_PATH=$(sed -n \
+            's/^Build downloaded to //p' download.log \
+            | tail -n 1 \
+            | tr -d '\r')
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK file not found!"
+          if [ -z "$DOWNLOAD_PATH" ] || [ ! -f "$DOWNLOAD_PATH" ]; then
+            echo "Could not resolve APK path from EAS output."
+            echo "Searching temporary directory as fallback..."
+
+            DOWNLOAD_PATH=$(find /tmp/runner/eas-cli-nodejs/eas-build-run-cache \
+              -type f \
+              -name "*.apk" \
+              -print \
+              -quit 2>/dev/null || true)
+          fi
+
+          if [ -z "$DOWNLOAD_PATH" ] || [ ! -f "$DOWNLOAD_PATH" ]; then
+            echo "ERROR: APK download file not found!"
+            cat download.log
             exit 1
           fi
 
-          mv "$APK" ./Kamal-Medical-Hall.apk
+          cp "$DOWNLOAD_PATH" ./Kamal-Medical-Hall.apk
 
-          echo "APK downloaded successfully:"
+          if [ ! -s ./Kamal-Medical-Hall.apk ]; then
+            echo "ERROR: APK file is empty!"
+            exit 1
+          fi
+
+          echo "APK successfully prepared:"
           ls -lh ./Kamal-Medical-Hall.apk
-        env:
-          EXPO_TOKEN: ${{ secrets.EAS_ACCESS_TOKEN }}
 
-      # 8. Upload APK to GitHub Actions Artifacts
+      # 8. Upload APK to GitHub Artifacts
       - name: Upload Kamal Medical Hall APK
         uses: actions/upload-artifact@v4
         with:
