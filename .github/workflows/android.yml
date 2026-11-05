@@ -35,11 +35,9 @@ jobs:
       EXPO_PUBLIC_ENV: preview
 
     steps:
-      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -47,26 +45,23 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
-      # 3. Setup Java
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # 4. Setup Android SDK
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
-      # 5. Setup Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 6. Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # 7. Verify Android project
       - name: Verify Android project
         run: |
           if [ ! -f android/gradlew ]; then
@@ -82,19 +77,12 @@ jobs:
 
           echo "Android project verified."
 
-      # 8. Build APK
       - name: Build Kamal Medical Hall APK
         run: |
           chmod +x android/gradlew
-
           cd android
+          ./gradlew --no-daemon --stacktrace assembleDebug
 
-          ./gradlew \
-            --no-daemon \
-            --stacktrace \
-            assembleDebug
-
-      # 9. Verify APK
       - name: Verify APK
         run: |
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
@@ -107,7 +95,6 @@ jobs:
           echo "APK generated successfully:"
           ls -lh "$APK"
 
-      # 10. Prepare APK
       - name: Prepare APK
         run: |
           cp \
@@ -116,7 +103,6 @@ jobs:
 
           ls -lh ./Kamal-Medical-Hall.apk
 
-      # 11. Upload APK
       - name: Upload Kamal Medical Hall APK
         uses: actions/upload-artifact@v4
         with:
