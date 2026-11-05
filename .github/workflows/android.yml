@@ -1,5 +1,5 @@
 
-name: Android EAS Preview Build
+name: Kamal Medical Hall - Android APK Build
 
 on:
   push:
@@ -8,17 +8,19 @@ on:
     paths:
       - "mobile/**"
       - ".github/workflows/android.yml"
+
   pull_request:
     branches:
       - main
     paths:
       - "mobile/**"
       - ".github/workflows/android.yml"
+
   workflow_dispatch:
 
 jobs:
   android-build:
-    name: Build Android App
+    name: Build Kamal Medical Hall APK
     runs-on: ubuntu-latest
 
     defaults:
@@ -26,9 +28,11 @@ jobs:
         working-directory: mobile
 
     steps:
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -36,17 +40,20 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
+      # 3. Install dependencies
       - name: Install dependencies
         run: npm ci
 
+      # 4. Verify Expo project
       - name: Verify Expo project
-        run: npx eas-cli project:info --non-interactive
+        run: npx eas-cli@latest project:info --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EAS_ACCESS_TOKEN }}
 
+      # 5. Build Android APK on EAS Cloud
       - name: Build Android APK on EAS
         run: |
-          npx eas-cli build \
+          npx eas-cli@latest build \
             --platform android \
             --profile preview \
             --non-interactive \
@@ -55,19 +62,56 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EAS_ACCESS_TOKEN }}
 
-      - name: Download APK from EAS
+      # 6. Extract EAS Build ID
+      - name: Extract EAS Build ID
+        id: build
         run: |
-          BUILD_ID=$(node -e "const r=require('./build-result.json'); console.log(Array.isArray(r) ? r[0].id : r.id)")
-          npx eas-cli build:download \
-            --id "$BUILD_ID" \
-            --path ./YOI-KIJI.apk
+          BUILD_ID=$(node -e "
+            const fs = require('fs');
+            const result = JSON.parse(
+              fs.readFileSync('build-result.json', 'utf8')
+            );
+
+            const build = Array.isArray(result)
+              ? result[0]
+              : result;
+
+            if (!build || !build.id) {
+              throw new Error('EAS Build ID not found');
+            }
+
+            console.log(build.id);
+          ")
+
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "EAS Build ID: $BUILD_ID"
+
+      # 7. Download APK from EAS
+      - name: Download Kamal Medical Hall APK
+        run: |
+          npx eas-cli@latest build:download \
+            --build-id "${{ steps.build.outputs.build_id }}" \
+            --non-interactive
+
+          APK=$(find . -maxdepth 1 -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK file not found!"
+            exit 1
+          fi
+
+          mv "$APK" ./Kamal-Medical-Hall.apk
+
+          echo "APK downloaded successfully:"
+          ls -lh ./Kamal-Medical-Hall.apk
         env:
           EXPO_TOKEN: ${{ secrets.EAS_ACCESS_TOKEN }}
 
-      - name: Upload APK to GitHub Actions
+      # 8. Upload APK to GitHub Actions Artifacts
+      - name: Upload Kamal Medical Hall APK
         uses: actions/upload-artifact@v4
         with:
-          name: YOI-KIJI-Android-APK
-          path: mobile/YOI-KIJI.apk
+          name: Kamal-Medical-Hall-Android-APK
+          path: mobile/Kamal-Medical-Hall.apk
           if-no-files-found: error
           retention-days: 30
