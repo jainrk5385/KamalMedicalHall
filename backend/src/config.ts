@@ -1,4 +1,3 @@
-
 import 'dotenv/config';
 
 const env: Record<string, string | undefined> = Object.fromEntries(
@@ -38,22 +37,14 @@ function getNumber(
 
 const isProd = env.NODE_ENV === 'production';
 
-// Static OTP is permitted only in non-production test environments.
-const testOtpEnabled =
-  env.TEST_OTP_ENABLED?.toLowerCase() === 'true' &&
-  !isProd;
-
 export const config = {
   isProd,
 
-  testOtpEnabled,
-
-  // Pearl SMS is the only production OTP provider.
+  // Pearl SMS is the only supported OTP provider.
   authMode: 'sms' as const,
 
   port: getNumber(env.PORT, 4000, 'PORT'),
 
-  // MongoDB is the only supported database.
   mongoUrl: env.MONGODB_URI ?? '',
 
   jwtSecret: env.JWT_SECRET ?? '',
@@ -98,10 +89,8 @@ export const config = {
   ),
 };
 
-// MongoDB-only application.
 export const useMongo = (): boolean => true;
 
-// Required environment validation.
 if (!config.mongoUrl) {
   throw new Error('MONGODB_URI is required');
 }
@@ -116,12 +105,5 @@ if (
 ) {
   throw new Error(
     'PUBLIC_URL must look like https://api.example.com (no path)',
-  );
-}
-
-// Never allow static OTP testing in production.
-if (config.isProd && config.testOtpEnabled) {
-  throw new Error(
-    'Static OTP testing is not allowed in production',
   );
 }

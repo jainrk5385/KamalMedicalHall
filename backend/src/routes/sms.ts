@@ -1,4 +1,4 @@
-
+import { randomInt } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 
@@ -23,29 +23,20 @@ smsAdmin.use(authed, requireRole('admin'));
 const masked = (key: string | null) =>
   key ? `••••${key.slice(-4)}` : null;
 
-const staticOtpAllowed =
-  !config.isProd && config.testOtpEnabled;
-
 const view = async () => {
   const settings = await smsSettings();
-
-  const effectiveOtpChannel = staticOtpAllowed
-    ? settings.otpChannel
-    : 'sms';
 
   return {
     apiUrl: PEARL_SMS_URL,
     senderId: settings.senderId,
     smsType: settings.smsType,
     otpTemplate: settings.otpTemplate,
-    otpChannel: effectiveOtpChannel,
-    staticOtpAllowed,
+    otpChannel: 'sms' as const,
+    staticOtpAllowed: false,
     apiKeySet: Boolean(settings.apiKey),
     apiKeyHint: masked(settings.apiKey),
     updatedAt: settings.updatedAt,
-    inUse:
-      config.authMode === 'sms' &&
-      effectiveOtpChannel === 'sms',
+    inUse: config.authMode === 'sms',
   };
 };
 
@@ -76,11 +67,8 @@ const schema = z.object({
       'The message must contain {otp} where the code goes',
     ),
 
-  // Retained for compatibility with the existing admin app.
-  // The submitted URL is deliberately ignored.
+  // Retained for compatibility. The submitted URL is ignored.
   apiUrl: trimmed(300).optional(),
-
-  otpChannel: z.enum(['static', 'sms']).optional(),
 });
 
 smsAdmin.get('/sms', async (_req, res) => {
@@ -90,33 +78,17 @@ smsAdmin.get('/sms', async (_req, res) => {
 smsAdmin.put('/sms', async (req, res) => {
   const body = parse(schema, req.body);
 
-  if (
-    body.otpChannel === 'static' &&
-    !staticOtpAllowed
-  ) {
-    throw new HttpError(
-      400,
-      'test_otp_disabled',
-      'Static test OTPs are disabled. Enable TEST_OTP_ENABLED in a non-production environment or configure Pearl SMS.',
-    );
-  }
-
   const update: Record<string, unknown> = {
     apiUrl: PEARL_SMS_URL,
     senderId: body.senderId,
     smsType: body.smsType,
     otpTemplate: body.otpTemplate,
+    otpChannel: 'sms',
     updatedBy: req.user!.id,
   };
 
   if (body.apiKey) {
     update.apiKey = body.apiKey;
-  }
-
-  if (body.otpChannel !== undefined) {
-    update.otpChannel = body.otpChannel;
-  } else if (!staticOtpAllowed) {
-    update.otpChannel = 'sms';
   }
 
   await SmsSettingsModel.findOneAndUpdate(
@@ -138,7 +110,7 @@ smsAdmin.put('/sms', async (req, res) => {
   res.json(await view());
 });
 
-/** Sends a sample OTP to test the configured Pearl SMS gateway. */
+/** Sends a random sample code to test the configured Pearl SMS gateway. */
 smsAdmin.post('/sms/test', async (req, res) => {
   const body = parse(
     z.object({
@@ -153,10 +125,13 @@ smsAdmin.post('/sms/test', async (req, res) => {
 
   const settings = await smsSettings();
 
+  // This is a gateway test message, not an authentication OTP.
+  const sampleCode = String(randomInt(100000, 1000000));
+
   try {
     const result = await sendSms(
       phone,
-      renderOtp(settings.otpTemplate, '123456'),
+      renderOtp(settings.otpTemplate, sampleCode),
       settings,
     );
 

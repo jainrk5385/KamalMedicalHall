@@ -15,7 +15,7 @@ export interface ISmsSettings extends Document {
   smsType: string;
   apiKey: string | null;
   otpTemplate: string;
-  otpChannel: 'static' | 'sms';
+  otpChannel: 'sms';
   updatedBy: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -29,39 +29,32 @@ const SmsSettingsSchema = new Schema<ISmsSettings>(
       unique: true,
       default: 'default',
     },
-
     apiUrl: {
       type: String,
       default: PEARL_SMS_URL,
       immutable: true,
     },
-
     senderId: {
       type: String,
       default: '',
     },
-
     smsType: {
       type: String,
       default: 'TRANS',
     },
-
     apiKey: {
       type: String,
       default: null,
     },
-
     otpTemplate: {
       type: String,
       default: 'Your OTP is {otp}.',
     },
-
     otpChannel: {
       type: String,
-      enum: ['static', 'sms'],
+      enum: ['sms'],
       default: 'sms',
     },
-
     updatedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

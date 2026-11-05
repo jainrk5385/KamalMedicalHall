@@ -164,15 +164,18 @@ function smsSession(phone: string) {
   return { token: signSessionToken(phone) };
 }
 
-/** Generate, store and send OTP through Pearl SMS. */
+/**
+ * Generate, store and send OTP through Pearl SMS.
+ * No environment-based provider selection or static OTP fallback.
+ */
 async function sendOwnCode(phone: string): Promise<void> {
   const settings = await smsSettings();
 
-  if (settings.otpChannel !== 'sms') {
+  if (!settings.apiKey || !settings.senderId) {
     throw new HttpError(
       503,
       'otp_unavailable',
-      'Pearl SMS OTP is not enabled. Please configure SMS settings.',
+      'Pearl SMS API key or sender ID is not configured.',
     );
   }
 
@@ -254,7 +257,11 @@ async function sendOwnCode(phone: string): Promise<void> {
   }
 
   try {
-    await sendSms(phone, renderOtp(settings.otpTemplate, code), settings);
+    await sendSms(
+      phone,
+      renderOtp(settings.otpTemplate, code),
+      settings,
+    );
   } catch (error) {
     await OtpCode.updateOne(
       { phone, codeHash: hashCode(phone, code) },
@@ -277,12 +284,14 @@ async function sendOwnCode(phone: string): Promise<void> {
     throw new HttpError(
       502,
       'otp_unavailable',
-      'Could not send OTP. Please try again.',
+      'Could not send OTP through Pearl SMS. Please try again.',
     );
   }
 }
 
-/** Verify and consume the latest unexpired OTP exactly once. */
+/**
+ * Verify and consume the latest unexpired OTP exactly once.
+ */
 async function checkOwnCode(phone: string, code: string): Promise<void> {
   const row = await OtpCode.findOne({ phone })
     .select('codeHash attempts expiresAt')
@@ -303,7 +312,10 @@ async function checkOwnCode(phone: string, code: string): Promise<void> {
   const expected = Buffer.from(row.codeHash, 'hex');
   const received = Buffer.from(hashCode(phone, code), 'hex');
 
-  if (!timingSafeEqual(expected, received)) {
+  if (
+    expected.length !== received.length ||
+    !timingSafeEqual(expected, received)
+  ) {
     const result = await OtpCode.updateOne(
       {
         phone,
@@ -364,7 +376,9 @@ async function checkOwnCode(phone: string, code: string): Promise<void> {
   }
 }
 
-/** Send OTP through Pearl SMS in every environment. */
+/**
+ * Send OTP through Pearl SMS in Development and Production.
+ */
 otpRouter.post('/send', async (req, res) => {
   const body = parse(phoneSchema, req.body);
   const phone = normalisePhone(body.phone);
@@ -384,7 +398,9 @@ otpRouter.post('/send', async (req, res) => {
   res.json({ sent: true, testMode: false });
 });
 
-/** Verify SMS OTP and establish application session. */
+/**
+ * Verify Pearl SMS OTP and establish application session.
+ */
 otpRouter.post('/verify', async (req, res) => {
   const body = parse(
     z.object({

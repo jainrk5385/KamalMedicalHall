@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { endpoints, type SmsSettings } from '../../api/endpoints';
-import { ChoiceChips } from '../../components/forms';
 import { TitleBadge } from '../../components/layout';
 import { Tap, tick } from '../../components/motion';
 import {
@@ -30,7 +29,7 @@ type Form = {
   apiKey: string;
   otpTemplate: string;
   apiUrl: string;
-  otpChannel: 'static' | 'sms';
+  otpChannel: 'sms';
 };
 
 const fromServer = (d: SmsSettings): Form => ({
@@ -39,10 +38,10 @@ const fromServer = (d: SmsSettings): Form => ({
   apiKey: '',
   otpTemplate: d.otpTemplate,
   apiUrl: d.apiUrl,
-  otpChannel: d.staticOtpAllowed ? d.otpChannel : 'sms',
+  otpChannel: 'sms',
 });
 
-/** Admin: manage Pearl SMS gateway and non-production OTP testing. */
+/** Admin: manage mandatory Pearl SMS gateway settings. */
 export function SmsSettingsScreen() {
   const { t } = useTranslation();
 
@@ -98,7 +97,7 @@ export function SmsSettingsScreen() {
 
   const preview = f.otpTemplate.replaceAll(
     '{otp}',
-    '123456'
+    '******'
   );
 
   const save = async () => {
@@ -107,15 +106,13 @@ export function SmsSettingsScreen() {
 
     try {
       const next = await endpoints.admin.saveSms({
-        senderId: f.senderId.trim(),
-        smsType: f.smsType.trim(),
-        otpTemplate: f.otpTemplate.trim(),
-        apiKey: f.apiKey.trim() || undefined,
-        apiUrl: f.apiUrl.trim() || undefined,
-        otpChannel: saved.staticOtpAllowed
-          ? f.otpChannel
-          : 'sms',
-      });
+  senderId: f.senderId.trim(),
+  smsType: f.smsType.trim(),
+  otpTemplate: f.otpTemplate.trim(),
+  apiKey: f.apiKey.trim() || undefined,
+  apiUrl: f.apiUrl.trim() || undefined,
+  otpChannel: 'sms',
+});
 
       setSaved(next);
       setF(fromServer(next));
@@ -209,57 +206,19 @@ export function SmsSettingsScreen() {
       </Card>
 
       <Card style={s.section}>
-        <ChoiceChips<Form['otpChannel']>
-          label={t('sms.channel')}
-          value={f.otpChannel}
-          onChange={(value) => {
-            if (value) {
-              setF((current) =>
-                current
-                  ? { ...current, otpChannel: value }
-                  : current
-              );
-            }
-          }}
-          options={[
-            ...(saved.staticOtpAllowed
-              ? [
-                  {
-                    value: 'static' as const,
-                    label: t('sms.channelStatic'),
-                  },
-                ]
-              : []),
-            {
-              value: 'sms' as const,
-              label: t('sms.channelSms'),
-            },
-          ]}
-        />
+  <TitleBadge
+    title="OTP Authentication"
+    titleStyle={[type.h3, { color: colors.text }]}
+    badge={
+      <Pill text="Pearl SMS" tone="green" />
+    }
+  />
 
-        <Text
-          style={[
-            type.small,
-            {
-              color:
-                f.otpChannel === 'static'
-                  ? colors.amber
-                  : colors.secondary,
-            },
-          ]}
-        >
-          {saved.staticOtpAllowed && f.otpChannel === 'static'
-            ? t('sms.channelStaticHelp')
-            : t('sms.channelSmsHelp')}
-        </Text>
-
-        {!saved.staticOtpAllowed && (
-          <Text style={[type.small, { color: colors.secondary }]}>
-            Static OTP is unavailable in this environment.
-            Pearl SMS is required.
-          </Text>
-        )}
-      </Card>
+  <Text style={[type.small, { color: colors.secondary }]}>
+    Pearl SMS is mandatory for all OTP authentication
+    in development and production. Static OTP is disabled.
+  </Text>
+</Card>
 
       <Card style={s.section}>
         <TextField
@@ -470,8 +429,7 @@ const s = StyleSheet.create({
   chipOn: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
-  },
-  preview: {
+  },  preview: {
     flexDirection: 'row',
     gap: 10,
     alignItems: 'flex-start',
