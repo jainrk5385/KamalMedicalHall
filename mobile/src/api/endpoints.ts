@@ -1,13 +1,13 @@
 
 import { api } from './client';
 
-/** The SMS gateway used for login OTPs. The API key itself is never sent back, only its last 4 characters. */
+/** Pearl SMS gateway settings. API key is never returned, only its last 4 characters. */
 export interface SmsSettings {
   apiUrl: string;
   senderId: string;
   smsType: string;
   otpTemplate: string;
-  otpChannel: 'static' | 'sms';
+  otpChannel: 'sms';
   staticOtpAllowed: boolean;
   apiKeySet: boolean;
   apiKeyHint: string | null;
@@ -407,7 +407,7 @@ export const endpoints = {
       otpTemplate: string;
       apiKey?: string;
       apiUrl?: string;
-      otpChannel?: 'static' | 'sms';
+      otpChannel?: 'sms';
     }) =>
       api<SmsSettings>(
         'PUT',

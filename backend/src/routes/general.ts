@@ -97,7 +97,7 @@ general.get('/config', async (_req, res) => {
     deliveryDates: listDeliveryDates(new Date(), store.orderCutoffTime),
     orderCutoffTime: store.orderCutoffTime,
     authMode: config.authMode,
-    otpTestMode: !config.isProd && sms?.otpChannel === 'static',
+    otpTestMode: false,
   });
 });
 

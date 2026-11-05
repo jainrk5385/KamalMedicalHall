@@ -8,7 +8,7 @@ export interface SmsSettings {
   smsType: string;
   apiKey: string | null;
   otpTemplate: string;
-  otpChannel: 'static' | 'sms';
+  otpChannel: 'sms';
   updatedAt: string;
 }
 
@@ -36,18 +36,12 @@ export async function smsSettings(): Promise<SmsSettings> {
   }).lean();
 
   const value: SmsSettings = {
-    // Fixed Pearl SMS endpoint. Never accept a configurable gateway URL.
     apiUrl: PEARL_SMS_URL,
-
     senderId: record?.senderId ?? '',
     smsType: record?.smsType ?? 'TRANS',
     apiKey: record?.apiKey ?? null,
     otpTemplate: record?.otpTemplate ?? 'Your OTP is {otp}.',
-
-    // SMS is the default. Static OTP must be controlled separately
-    // by the non-production test-mode checks in otp.ts.
-    otpChannel: record?.otpChannel === 'static' ? 'static' : 'sms',
-
+    otpChannel: 'sms',
     updatedAt: record?.updatedAt
       ? new Date(record.updatedAt).toISOString()
       : new Date(0).toISOString(),
@@ -86,7 +80,7 @@ export async function sendSms(
   if (!s.apiKey || !s.senderId) {
     throw new SmsError(
       'not_configured',
-      'SMS sender ID or API key is not set',
+      'Pearl SMS API key or sender ID is not configured',
     );
   }
 
@@ -135,7 +129,7 @@ export async function sendSms(
   try {
     body = JSON.parse(responseText);
   } catch {
-    // Pearl may return a plain-text response.
+    // Pearl SMS may return plain text.
   }
 
   const failed =
