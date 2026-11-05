@@ -1,3 +1,4 @@
+
 name: Android EAS Preview Build
 
 on:
@@ -43,7 +44,30 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EAS_ACCESS_TOKEN }}
 
-      - name: Start Android preview build
-        run: npx eas-cli build --platform android --profile preview --non-interactive
+      - name: Build Android APK on EAS
+        run: |
+          npx eas-cli build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json > build-result.json
         env:
           EXPO_TOKEN: ${{ secrets.EAS_ACCESS_TOKEN }}
+
+      - name: Download APK from EAS
+        run: |
+          BUILD_ID=$(node -e "const r=require('./build-result.json'); console.log(Array.isArray(r) ? r[0].id : r.id)")
+          npx eas-cli build:download \
+            --id "$BUILD_ID" \
+            --path ./YOI-KIJI.apk
+        env:
+          EXPO_TOKEN: ${{ secrets.EAS_ACCESS_TOKEN }}
+
+      - name: Upload APK to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: YOI-KIJI-Android-APK
+          path: mobile/YOI-KIJI.apk
+          if-no-files-found: error
+          retention-days: 30
