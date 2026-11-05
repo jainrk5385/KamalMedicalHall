@@ -240,7 +240,7 @@ async function sendOwnCode(phone: string): Promise<void> {
           },
         },
       ],
-      { upsert: true, returnDocument: 'after' },
+      { upsert: true, returnDocument: 'after', updatePipeline: true },
     );
   } catch (error) {
     const mongoError = error as { code?: number };
