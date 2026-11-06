@@ -15,7 +15,8 @@ export interface ISmsSettings extends Document {
   smsType: string;
   apiKey: string | null;
   otpTemplate: string;
-  otpChannel: 'sms';
+  otpChannel: 'sms' | 'static';
+  staticOtpPhones: string[];
   updatedBy: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -52,8 +53,12 @@ const SmsSettingsSchema = new Schema<ISmsSettings>(
     },
     otpChannel: {
       type: String,
-      enum: ['sms'],
+      enum: ['sms', 'static'],
       default: 'sms',
+    },
+    staticOtpPhones: {
+      type: [String],
+      default: [],
     },
     updatedBy: {
       type: Schema.Types.ObjectId,

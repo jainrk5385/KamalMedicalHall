@@ -165,21 +165,9 @@ function smsSession(phone: string) {
 }
 
 /**
- * Generate, store and send OTP through Pearl SMS.
- * No environment-based provider selection or static OTP fallback.
+ * Store an OTP hash and send it through the selected authentication channel.
  */
-async function sendOwnCode(phone: string): Promise<void> {
-  const settings = await smsSettings();
-
-  if (!settings.apiKey || !settings.senderId) {
-    throw new HttpError(
-      503,
-      'otp_unavailable',
-      'Pearl SMS API key or sender ID is not configured.',
-    );
-  }
-
-  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+async function storeOtpCode(phone: string, code: string): Promise<void> {
   const now = Date.now();
   const nowDate = new Date(now);
   const windowExpiredBefore = new Date(now - 10 * 60_000);
@@ -255,6 +243,35 @@ async function sendOwnCode(phone: string): Promise<void> {
 
     throw error;
   }
+}
+
+/**
+ * Static OTP is restricted to explicitly approved reviewer/test phone numbers.
+ * All other users continue receiving real Pearl SMS OTP, even when reviewer
+ * mode is selected in the admin panel.
+ */
+async function sendOwnCode(phone: string): Promise<boolean> {
+  const settings = await smsSettings();
+
+  if (
+    settings.otpChannel === 'static' &&
+    settings.staticOtpPhones.includes(phone)
+  ) {
+    await storeOtpCode(phone, '123456');
+    return true;
+  }
+
+  if (!settings.apiKey || !settings.senderId) {
+    throw new HttpError(
+      503,
+      'otp_unavailable',
+      'Pearl SMS API key or sender ID is not configured.',
+    );
+  }
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+
+  await storeOtpCode(phone, code);
 
   try {
     await sendSms(
@@ -287,6 +304,8 @@ async function sendOwnCode(phone: string): Promise<void> {
       'Could not send OTP through Pearl SMS. Please try again.',
     );
   }
+
+  return false;
 }
 
 /**
@@ -377,7 +396,7 @@ async function checkOwnCode(phone: string, code: string): Promise<void> {
 }
 
 /**
- * Send OTP through Pearl SMS in Development and Production.
+ * Send OTP using the configured SMS channel or an approved reviewer account.
  */
 otpRouter.post('/send', async (req, res) => {
   const body = parse(phoneSchema, req.body);
@@ -393,13 +412,13 @@ otpRouter.post('/send', async (req, res) => {
     );
   }
 
-  await sendOwnCode(phone);
+  const testMode = await sendOwnCode(phone);
 
-  res.json({ sent: true, testMode: false });
+  res.json({ sent: true, testMode });
 });
 
 /**
- * Verify Pearl SMS OTP and establish application session.
+ * Verify OTP and establish application session.
  */
 otpRouter.post('/verify', async (req, res) => {
   const body = parse(

@@ -71,7 +71,7 @@
     "wrongOtp": "Incorrect OTP. Please try again.",
     "verifyFailed": "Could not verify. Please try again.",
     "login": "Log in",
-    "testOtp": "Test mode: no SMS is sent. Enter 123456 as the OTP."
+    "testOtp": "Approved reviewer mode: no SMS is sent to this number. Enter 123456 as the OTP."
   },
   "signup": {
     "title": "Welcome!",

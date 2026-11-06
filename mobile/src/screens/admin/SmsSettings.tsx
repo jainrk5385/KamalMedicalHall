@@ -29,7 +29,8 @@ type Form = {
   apiKey: string;
   otpTemplate: string;
   apiUrl: string;
-  otpChannel: 'sms';
+  otpChannel: 'sms' | 'static';
+  staticOtpPhones: string;
 };
 
 const fromServer = (d: SmsSettings): Form => ({
@@ -38,10 +39,11 @@ const fromServer = (d: SmsSettings): Form => ({
   apiKey: '',
   otpTemplate: d.otpTemplate,
   apiUrl: d.apiUrl,
-  otpChannel: 'sms',
+  otpChannel: d.otpChannel,
+  staticOtpPhones: (d.staticOtpPhones ?? []).join(', '),
 });
 
-/** Admin: manage mandatory Pearl SMS gateway settings. */
+/** Admin: manage Pearl SMS and approved reviewer OTP settings. */
 export function SmsSettingsScreen() {
   const { t } = useTranslation();
 
@@ -94,6 +96,13 @@ export function SmsSettingsScreen() {
     };
 
   const missingOtp = !f.otpTemplate.includes('{otp}');
+  const staticPhones = f.staticOtpPhones
+    .split(/[\s,;]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const invalidStaticPhones = staticPhones.some(
+    (value) => !/^(?:\+?91)?[6-9]\d{9}$/.test(value)
+  );
 
   const preview = f.otpTemplate.replaceAll(
     '{otp}',
@@ -106,13 +115,14 @@ export function SmsSettingsScreen() {
 
     try {
       const next = await endpoints.admin.saveSms({
-  senderId: f.senderId.trim(),
-  smsType: f.smsType.trim(),
-  otpTemplate: f.otpTemplate.trim(),
-  apiKey: f.apiKey.trim() || undefined,
-  apiUrl: f.apiUrl.trim() || undefined,
-  otpChannel: 'sms',
-});
+        senderId: f.senderId.trim(),
+        smsType: f.smsType.trim(),
+        otpTemplate: f.otpTemplate.trim(),
+        apiKey: f.apiKey.trim() || undefined,
+        apiUrl: f.apiUrl.trim() || undefined,
+        otpChannel: f.otpChannel,
+        staticOtpPhones: staticPhones,
+      });
 
       setSaved(next);
       setF(fromServer(next));
@@ -177,7 +187,9 @@ export function SmsSettingsScreen() {
           disabled={
             missingOtp ||
             !f.senderId.trim() ||
-            !f.smsType.trim()
+            !f.smsType.trim() ||
+            invalidStaticPhones ||
+            (f.otpChannel === 'static' && staticPhones.length === 0)
           }
         />
       }
@@ -206,19 +218,78 @@ export function SmsSettingsScreen() {
       </Card>
 
       <Card style={s.section}>
-  <TitleBadge
-    title="OTP Authentication"
-    titleStyle={[type.h3, { color: colors.text }]}
-    badge={
-      <Pill text="Pearl SMS" tone="green" />
-    }
-  />
+        <TitleBadge
+          title="OTP Authentication"
+          titleStyle={[type.h3, { color: colors.text }]}
+          badge={
+            <Pill
+              text={f.otpChannel === 'sms' ? 'Pearl SMS default' : 'Reviewer mode'}
+              tone={f.otpChannel === 'sms' ? 'green' : 'amber'}
+            />
+          }
+        />
 
-  <Text style={[type.small, { color: colors.secondary }]}>
-    Pearl SMS is mandatory for all OTP authentication
-    in development and production. Static OTP is disabled.
-  </Text>
-</Card>
+        <Text style={[type.small, { color: colors.secondary }]}>
+          Choose the normal customer OTP provider. SMS remains the default.
+          Static OTP is limited to the approved reviewer/test numbers below;
+          every other customer continues to receive a real SMS OTP.
+        </Text>
+
+        <View style={s.chips}>
+          {([
+            { value: 'sms', label: 'SMS OTP (Pearl)' },
+            { value: 'static', label: 'Static OTP (review)' },
+          ] as const).map((option) => {
+            const selected = f.otpChannel === option.value;
+
+            return (
+              <Tap
+                key={option.value}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                onPress={() => set('otpChannel')(option.value)}
+                style={[s.chip, selected && s.chipOn]}
+              >
+                <Text
+                  style={[
+                    type.smallMedium,
+                    { color: selected ? colors.white : colors.text },
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </Tap>
+            );
+          })}
+        </View>
+
+        {f.otpChannel === 'static' ? (
+          <View style={{ gap: spacing.sm }}>
+            <TextField
+              label="Approved reviewer / test phone numbers"
+              value={f.staticOtpPhones}
+              onChangeText={set('staticOtpPhones')}
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+              placeholder="9876543210, 9123456780"
+              error={
+                invalidStaticPhones
+                  ? 'Enter valid Indian 10-digit numbers, separated by commas.'
+                  : undefined
+              }
+              hint="Only these numbers receive the fixed reviewer OTP. Other customers continue using Pearl SMS."
+            />
+            <Text style={[type.smallMedium, { color: colors.text }]}>
+              Fixed reviewer OTP: 123456
+            </Text>
+            <Text style={[type.small, { color: colors.secondary }]}>
+              Use dedicated test/reviewer accounts only. Do not add ordinary
+              customers or an unrestricted store-admin account.
+            </Text>
+          </View>
+        ) : null}
+      </Card>
 
       <Card style={s.section}>
         <TextField
