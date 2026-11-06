@@ -6,6 +6,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { Image, Linking, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeIn, ZoomIn, interpolate, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -399,6 +401,7 @@ export function OrderDetailScreen({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [billBusy, setBillBusy] = useState(false);
   const [err, setErr] = useState('');
   useErrorPopup(err);
   const [errCount, setErrCount] = useState(0);
@@ -417,6 +420,49 @@ export function OrderDetailScreen({
     ?? shop.data?.legacy.phone
     ?? config.data?.store.phone
     ?? o.store.phone;
+
+  const downloadBill = async () => {
+  const bill = o.bill;
+  if (!bill?.downloadUrl || billBusy) return;
+
+  setBillBusy(true);
+  setErr('');
+
+  try {
+    if (!FileSystem.cacheDirectory) {
+      throw new Error('File storage is unavailable.');
+    }
+
+    if (!(await Sharing.isAvailableAsync())) {
+      throw new Error('File sharing is not available on this device.');
+    }
+
+    const safeName = (bill.name || `Bill-${o.orderNumber}.pdf`)
+      .replace(/[^\w.-]/g, '_');
+
+    const fileUri = `${FileSystem.cacheDirectory}${Date.now()}-${safeName}`;
+
+    const result = await FileSystem.downloadAsync(
+      bill.downloadUrl,
+      fileUri,
+    );
+
+    if (result.status !== 200) {
+      throw new Error(`Bill download failed (HTTP ${result.status}).`);
+    }
+
+    await Sharing.shareAsync(result.uri, {
+      mimeType: bill.mimeType || 'application/pdf',
+      dialogTitle: bill.name || 'Download Bill',
+      UTI: 'com.adobe.pdf',
+    });
+  } catch (e) {
+    setErr((e as Error).message || 'Unable to download bill.');
+    setErrCount((c) => c + 1);
+  } finally {
+    setBillBusy(false);
+  }
+};
 
   const callShop = () => {
     if (storePhone) {
@@ -738,15 +784,13 @@ export function OrderDetailScreen({
                       style={{ flex: 1 }}
                     />
                     <Button
-                      small
-                      title={t('order.downloadBill')}
-                      icon="download"
-                      onPress={() => {
-                        if (o.bill?.downloadUrl) void Linking.openURL(o.bill.downloadUrl);
-                      }}
-                      disabled={!o.bill.downloadUrl}
-                      style={{ flex: 1 }}
-                    />
+  small
+  title={billBusy ? 'Downloading...' : t('order.downloadBill')}
+  icon="download"
+  onPress={() => void downloadBill()}
+  disabled={!o.bill?.downloadUrl || billBusy}
+  style={{ flex: 1 }}
+/>
                   </ButtonRow>
                 </>
               ) : null}

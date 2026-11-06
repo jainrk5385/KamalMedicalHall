@@ -12,6 +12,7 @@ module.exports = ({ config }) => {
   const hasAndroid = fs.existsSync(android);
   const hasIos = fs.existsSync(ios);
   const plugins = [...(config.plugins ?? [])];
+  plugins.push('expo-sharing');
   if (hasAndroid || hasIos) {
     plugins.push('@react-native-firebase/app', '@react-native-firebase/messaging', '@react-native-firebase/crashlytics');
   }
