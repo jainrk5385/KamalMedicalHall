@@ -8,7 +8,8 @@ export interface SmsSettings {
   smsType: string;
   apiKey: string | null;
   otpTemplate: string;
-  otpChannel: 'sms';
+  otpChannel: 'sms' | 'static';
+  staticOtpPhones: string[];
   updatedAt: string;
 }
 
@@ -41,7 +42,10 @@ export async function smsSettings(): Promise<SmsSettings> {
     smsType: record?.smsType ?? 'TRANS',
     apiKey: record?.apiKey ?? null,
     otpTemplate: record?.otpTemplate ?? 'Your OTP is {otp}.',
-    otpChannel: 'sms',
+    otpChannel: record?.otpChannel === 'static' ? 'static' : 'sms',
+    staticOtpPhones: Array.isArray(record?.staticOtpPhones)
+      ? record.staticOtpPhones
+      : [],
     updatedAt: record?.updatedAt
       ? new Date(record.updatedAt).toISOString()
       : new Date(0).toISOString(),

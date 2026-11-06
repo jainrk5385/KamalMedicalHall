@@ -73,7 +73,7 @@ export function createApp() {
   app.post('/admin/sms/test', writeLimit);
   app.post('/account/requests', writeLimit);
 
-// Authentication: Pearl SMS OTP only.
+// Authentication: Pearl SMS by default; static OTP is limited to approved reviewer numbers.
   app.use('/auth/otp', otpRouter);
 
   // Public routes.

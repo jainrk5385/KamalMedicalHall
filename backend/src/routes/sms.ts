@@ -1,10 +1,12 @@
 import { randomInt } from 'node:crypto';
+import { Types } from 'mongoose';
 import { Router } from 'express';
 import { z } from 'zod';
 
 import { authed, normalisePhone, requireRole } from '../auth.js';
 import { config } from '../config.js';
 import SmsSettingsModel from '../models/SmsSettings.js';
+import OtpModeAuditModel from '../models/OtpModeAudit.js';
 import { HttpError, parse } from '../http.js';
 import {
   SmsError,
@@ -31,8 +33,9 @@ const view = async () => {
     senderId: settings.senderId,
     smsType: settings.smsType,
     otpTemplate: settings.otpTemplate,
-    otpChannel: 'sms' as const,
-    staticOtpAllowed: false,
+    otpChannel: settings.otpChannel,
+    staticOtpPhones: settings.staticOtpPhones,
+    staticOtpAllowed: settings.staticOtpPhones.length > 0,
     apiKeySet: Boolean(settings.apiKey),
     apiKeyHint: masked(settings.apiKey),
     updatedAt: settings.updatedAt,
@@ -67,6 +70,10 @@ const schema = z.object({
       'The message must contain {otp} where the code goes',
     ),
 
+  otpChannel: z.enum(['sms', 'static']).default('sms'),
+
+  staticOtpPhones: z.array(z.string().trim().min(10).max(15)).max(20).default([]),
+
   // Retained for compatibility. The submitted URL is ignored.
   apiUrl: trimmed(300).optional(),
 });
@@ -78,12 +85,31 @@ smsAdmin.get('/sms', async (_req, res) => {
 smsAdmin.put('/sms', async (req, res) => {
   const body = parse(schema, req.body);
 
+  const staticOtpPhones = [
+    ...new Set(body.staticOtpPhones.map((phone) => normalisePhone(phone))),
+  ];
+
+  if (body.otpChannel === 'static' && staticOtpPhones.length === 0) {
+    throw new HttpError(
+      422,
+      'static_otp_phone_required',
+      'Add at least one approved reviewer/test phone number before enabling Static OTP.',
+    );
+  }
+
+  const previous = await SmsSettingsModel.findOne({ key: 'default' })
+    .select('otpChannel staticOtpPhones')
+    .lean();
+
+  const previousMode = previous?.otpChannel === 'static' ? 'static' : 'sms';
+
   const update: Record<string, unknown> = {
     apiUrl: PEARL_SMS_URL,
     senderId: body.senderId,
     smsType: body.smsType,
     otpTemplate: body.otpTemplate,
-    otpChannel: 'sms',
+    otpChannel: body.otpChannel,
+    staticOtpPhones,
     updatedBy: req.user!.id,
   };
 
@@ -106,6 +132,21 @@ smsAdmin.put('/sms', async (req, res) => {
   );
 
   forgetSmsSettings();
+
+  const previousPhones = Array.isArray(previous?.staticOtpPhones)
+    ? previous.staticOtpPhones
+    : [];
+  const reviewerPhonesChanged =
+    JSON.stringify([...previousPhones].sort()) !==
+    JSON.stringify([...staticOtpPhones].sort());
+
+  if (previousMode !== body.otpChannel || reviewerPhonesChanged) {
+    await OtpModeAuditModel.create({
+      previousMode,
+      newMode: body.otpChannel,
+      changedBy: new Types.ObjectId(req.user!.id),
+    });
+  }
 
   res.json(await view());
 });

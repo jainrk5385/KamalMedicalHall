@@ -7,7 +7,8 @@ export interface SmsSettings {
   senderId: string;
   smsType: string;
   otpTemplate: string;
-  otpChannel: 'sms';
+  otpChannel: 'sms' | 'static';
+  staticOtpPhones: string[];
   staticOtpAllowed: boolean;
   apiKeySet: boolean;
   apiKeyHint: string | null;
@@ -407,7 +408,8 @@ export const endpoints = {
       otpTemplate: string;
       apiKey?: string;
       apiUrl?: string;
-      otpChannel?: 'sms';
+      otpChannel: 'sms' | 'static';
+      staticOtpPhones: string[];
     }) =>
       api<SmsSettings>(
         'PUT',
