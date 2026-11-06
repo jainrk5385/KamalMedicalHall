@@ -44,7 +44,12 @@ export const uploadSignLimit = limiter(30);
  * webhooks, and the token-protected download links (invoice PDF, CSV exports), which a browser has to open. Requests
  * made by the socket handler inside this process carry a secret header and are always let through.
  */
-const HTTP_ALLOWED = [/^\/health$/, /^\/webhooks\//, /^\/export\//, /^\/orders\/[0-9a-f-]{36}\/invoice\.pdf$/i];
+const HTTP_ALLOWED = [
+  /^\/health$/,
+  /^\/webhooks\//,
+  /^\/export\//,
+  /^\/orders\/(?:[0-9a-f]{24}|[0-9a-f-]{36})\/invoice\.pdf$/i,
+];
 export function httpGate(req: Request, res: Response, next: NextFunction) {
   if (req.get(INTERNAL_HEADER) === INTERNAL_SECRET || !config.socketOnly) return next();
   if (req.method === 'OPTIONS' || HTTP_ALLOWED.some((rx) => rx.test(req.path))) return next();
