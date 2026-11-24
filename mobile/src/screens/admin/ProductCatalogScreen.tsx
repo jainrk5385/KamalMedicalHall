@@ -25,7 +25,7 @@ export function ProductCatalogScreen() {
     const price=Number(form.price), stockQuantity=Number(form.stockQuantity), discountedPrice=form.discountedPrice.trim()?Number(form.discountedPrice):null;
     if(!form.name.trim()||!Number.isFinite(price)||price<0||!Number.isInteger(stockQuantity)||stockQuantity<0||(discountedPrice!==null&&(!Number.isFinite(discountedPrice)||discountedPrice<0||discountedPrice>price))){setErr('Please check product name, price, discount and stock quantity.');return;}
     const isEditing=Boolean(editing);
-    const payload={name:form.name.trim(),description:form.description.trim(),images:form.images.split(/\\n|,/).map(x=>x.trim()).filter(Boolean),price,discountedPrice,stockQuantity,isAvailable:form.isAvailable};
+    const payload={name:form.name.trim(),description:form.description.trim(),images:form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean),price,discountedPrice,stockQuantity,isAvailable:form.isAvailable};
     setBusy(true);setErr('');
     try{
       if(editing)await endpoints.admin.updateProduct(editing,payload);
@@ -42,7 +42,7 @@ export function ProductCatalogScreen() {
       const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsMultipleSelection:true,selectionLimit:8,quality:0.85});
       if(result.canceled||!result.assets?.length)return;
       setUploading(true);
-      const existing=form.images.split(/\\n|,/).map(x=>x.trim()).filter(Boolean);
+      const existing=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
       const nextPreviews=[...previews];
       for(const asset of result.assets){
         if(existing.length>=8)break;
@@ -52,18 +52,18 @@ export function ProductCatalogScreen() {
         existing.push(uploaded.publicId);
         nextPreviews.push(uploaded.url || file.uri);
       }
-      setForm({...form,images:existing.join('\\n')});
+      setForm({...form,images:existing.join('\n')});
       setPreviews(nextPreviews);
       tick('success');
     } catch(e){setErr((e as Error).message);} finally {setUploading(false);}
   };
-  const edit=(p:Product)=>{setEditing(p.id);setPreviews(p.images ?? []);setForm({name:p.name,description:p.description,images:(p.imagePublicIds ?? []).join('\\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});setShowForm(true);};
+  const edit=(p:Product)=>{setEditing(p.id);setPreviews(p.images ?? []);setForm({name:p.name,description:p.description,images:(p.imagePublicIds ?? []).join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});setShowForm(true);};
   const removeImage=(index:number)=>{
-    const imageIds=form.images.split(/\\n|,/).map(x=>x.trim()).filter(Boolean);
+    const imageIds=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
     imageIds.splice(index,1);
     const nextPreviews=[...previews];
     nextPreviews.splice(index,1);
-    setForm({...form,images:imageIds.join('\\n')});
+    setForm({...form,images:imageIds.join('\n')});
     setPreviews(nextPreviews);
   };
   const remove=async(p:Product)=>{const ok=await showDialog({title:'Delete product?',message:`Delete “${p.name}”? This cannot be undone.`,icon:'trash',tone:'danger',confirmLabel:'Delete',cancelLabel:'Cancel'});if(!ok)return;try{await endpoints.admin.deleteProduct(p.id);await reload();tick('success');}catch(e){setErr((e as Error).message);}};
@@ -83,7 +83,7 @@ export function ProductCatalogScreen() {
       <Text style={[type.h3,{color:colors.text}]}>{editing?'Edit product':'Add product'}</Text>
       <TextField label="Product name *" value={form.name} onChangeText={v=>setForm({...form,name:v})}/>
       <TextField label="Description" value={form.description} onChangeText={v=>setForm({...form,description:v})} multiline/>
-      <Text style={[type.small,{color:colors.secondary}]}>Product photos ({form.images.split(/\\n|,/).filter(Boolean).length}/8)</Text>
+      <Text style={[type.small,{color:colors.secondary}]}>Product photos ({form.images.split(/\n|,/).filter(Boolean).length}/8)</Text>
       <Button title={uploading?"Uploading images…":"Choose product photos"} icon="images" variant="outline" loading={uploading} onPress={()=>{void addImages();}} disabled={uploading}/>
       {previews.length>0?<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:10,paddingVertical:4}}>{previews.map((uri,index)=><View key={`${uri}-${index}`} style={{width:104,gap:4}}><Image source={{uri}} style={{width:104,height:104,borderRadius:10,backgroundColor:colors.card}} resizeMode="contain"/><Button small title="Remove" variant="ghost" onPress={()=>removeImage(index)}/></View>)}</ScrollView>:null}
       <TextField label="Price (₹) *" value={form.price} onChangeText={v=>setForm({...form,price:v})} keyboardType="decimal-pad"/>
