@@ -70,11 +70,16 @@ export function ProductCatalogScreen() {
   return <Screen>
     <Text style={[type.h2,{color:colors.text}]}>Product catalogue</Text>
     <Text style={[type.small,{color:colors.secondary}]}>Manage customer-facing products. Upload up to 8 product photos. Products are informational only; no cart or checkout.</Text>
-    <Button title={showForm?'Close product form':'Add product'} icon={showForm?'x':'plus'} onPress={()=>{
+    <Button title={showForm?'Close product form':'Add product'} onPress={()=>{
       if(showForm){setShowForm(false);setEditing(null);setForm(blank);setPreviews([]);}
       else{setEditing(null);setForm(blank);setPreviews([]);setShowForm(true);}
     }}/>
-    {showForm?<Card style={{gap:10}}>
+    <Text style={[type.h3,{color:colors.text,marginTop:spacing.md,marginBottom:spacing.xs}]}>Products ({data?.products.length??0})</Text>
+    {loading&&!data?<Text>Loading…</Text>:error&&!data?<Text>{error}</Text>:!data?.products.length?<Message icon="cube-outline" title="No products added yet"/>:data.products.map(p=><Card key={p.id} style={{gap:10,marginBottom:spacing.md}}>
+      <View style={{flexDirection:'row',gap:12,alignItems:'center'}}>{p.images[0]?<Image source={{uri:p.images[0]}} style={{width:64,height:64,borderRadius:10}} resizeMode="contain"/>:null}<View style={{flex:1,gap:4}}><Text style={[type.bodyMedium,{color:colors.text}]}>{p.name}</Text><Text style={[type.small,{color:colors.secondary}]}>₹{p.discountedPrice??p.price} · Stock {p.stockQuantity} · {p.isAvailable?'Available':'Unavailable'}</Text></View></View>
+      <ButtonRow><Button small variant="outline" title="Edit" onPress={()=>edit(p)}/><Button small variant="danger" title="Delete" onPress={()=>{void remove(p);}}/></ButtonRow>
+    </Card>)}
+    {showForm?<Card style={{gap:10,marginTop:spacing.lg}}>
       <Text style={[type.h3,{color:colors.text}]}>{editing?'Edit product':'Add product'}</Text>
       <TextField label="Product name *" value={form.name} onChangeText={v=>setForm({...form,name:v})}/>
       <TextField label="Description" value={form.description} onChangeText={v=>setForm({...form,description:v})} multiline/>
@@ -87,10 +92,5 @@ export function ProductCatalogScreen() {
       <ButtonRow><Button title={form.isAvailable?'Available':'Unavailable'} variant="outline" onPress={()=>setForm({...form,isAvailable:!form.isAvailable})}/><Button title={busy?'Saving…':editing?'Update product':'Save product'} loading={busy} onPress={()=>{void save();}}/></ButtonRow>
       <Button title="Cancel" variant="ghost" onPress={()=>{setShowForm(false);setEditing(null);setForm(blank);setPreviews([]);}}/>
     </Card>:null}
-    {!showForm?<><Text style={[type.h3,{color:colors.text,marginTop:spacing.sm}]}>Products ({data?.products.length??0})</Text>
-    {loading&&!data?<Text>Loading…</Text>:error&&!data?<Text>{error}</Text>:!data?.products.length?<Message icon="cube-outline" title="No products added yet"/>:data.products.map(p=><Card key={p.id} style={{gap:8}}>
-      <View style={{flexDirection:'row',gap:10,alignItems:'center'}}>{p.images[0]?<Image source={{uri:p.images[0]}} style={{width:64,height:64,borderRadius:10}} resizeMode="contain"/>:null}<View style={{flex:1}}><Text style={[type.bodyMedium,{color:colors.text}]}>{p.name}</Text><Text style={[type.small,{color:colors.secondary}]}>₹{p.discountedPrice??p.price} · Stock {p.stockQuantity} · {p.isAvailable?'Available':'Unavailable'}</Text></View></View>
-      <ButtonRow><Button small variant="outline" title="Edit" onPress={()=>edit(p)}/><Button small variant="danger" title="Delete" onPress={()=>{void remove(p);}}/></ButtonRow>
-    </Card>)}</>:null}
   </Screen>;
 }
