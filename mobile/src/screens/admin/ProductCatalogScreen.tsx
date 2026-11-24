@@ -35,7 +35,7 @@ export function ProductCatalogScreen() {
       const existing=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
       for(const asset of result.assets){
         if(existing.length>=8)break;
-        const file:PrescriptionFile={id:`${Date.now()}-${existing.length}`,uri:asset.uri,name:asset.fileName??'product.jpg',mimeType:asset.mimeType?.startsWith('image/')?asset.mimeType:'image/jpeg',sizeBytes:asset.fileSize};
+        const file:PrescriptionFile={id:`${Date.now()}-${existing.length}`,uri:asset.uri,name:asset.fileName??'product.jpg',mimeType:asset.mimeType?.startsWith('image/')?asset.mimeType:'image/jpeg',sizeBytes:asset.fileSize ?? undefined};
         const sig=await endpoints.signUpload('product');
         const uploaded=await uploadPrescription(file,sig);
         existing.push(uploaded.publicId);
