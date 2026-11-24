@@ -21,6 +21,7 @@ export function ProductCatalogScreen() {
   const [previews,setPreviews]=useState<string[]>([]);
   const [showForm,setShowForm]=useState(false);
   const [err,setErr]=useState(''); useErrorPopup(err);
+  const imageIds=form.images.split(/\\n|,/).map(x=>x.trim()).filter(Boolean);
   const save=async()=>{
     const price=Number(form.price), stockQuantity=Number(form.stockQuantity), discountedPrice=form.discountedPrice.trim()?Number(form.discountedPrice):null;
     if(!form.name.trim()||!Number.isFinite(price)||price<0||!Number.isInteger(stockQuantity)||stockQuantity<0||(discountedPrice!==null&&(!Number.isFinite(discountedPrice)||discountedPrice<0||discountedPrice>price))){setErr('Please check product name, price, discount and stock quantity.');return;}
@@ -57,7 +58,7 @@ export function ProductCatalogScreen() {
       tick('success');
     } catch(e){setErr((e as Error).message);} finally {setUploading(false);}
   };
-  const edit=(p:Product)=>{setEditing(p.id);setPreviews(p.images ?? []);setForm({name:p.name,description:p.description,images:(p.imagePublicIds ?? []).join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});setShowForm(true);};
+  const edit=(p:Product)=>{const ids=(p.imagePublicIds ?? []).filter(id=>typeof id==='string'&&id.trim().length>0);setEditing(p.id);setPreviews(ids.map((_,i)=>p.images?.[i] ?? ''));setForm({name:p.name,description:p.description,images:ids.join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});setShowForm(true);};
   const removeImage=(index:number)=>{
     const imageIds=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
     imageIds.splice(index,1);
@@ -83,9 +84,9 @@ export function ProductCatalogScreen() {
       <Text style={[type.h3,{color:colors.text}]}>{editing?'Edit product':'Add product'}</Text>
       <TextField label="Product name *" value={form.name} onChangeText={v=>setForm({...form,name:v})}/>
       <TextField label="Description" value={form.description} onChangeText={v=>setForm({...form,description:v})} multiline/>
-      <Text style={[type.small,{color:colors.secondary}]}>Product photos ({form.images.split(/\n|,/).filter(Boolean).length}/8)</Text>
-      <Button title={uploading?"Uploading images…":"Choose product photos"} icon="images" variant="outline" loading={uploading} onPress={()=>{void addImages();}} disabled={uploading}/>
-      {previews.length>0?<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:10,paddingVertical:4}}>{previews.map((uri,index)=><View key={`${uri}-${index}`} style={{width:104,gap:4}}><Image source={{uri}} style={{width:104,height:104,borderRadius:10,backgroundColor:colors.card}} resizeMode="contain"/><Button small title="Remove" variant="ghost" onPress={()=>removeImage(index)}/></View>)}</ScrollView>:null}
+      <Text style={[type.small,{color:colors.secondary}]}>Product photos ({imageIds.length}/8)</Text>
+      <Button title={uploading?"Uploading images…":imageIds.length?"Add more photos":"Add product photos"} icon="images" variant="outline" loading={uploading} onPress={()=>{void addImages();}} disabled={uploading||imageIds.length>=8}/>
+      {imageIds.length>0?<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:10,paddingVertical:4}}>{imageIds.map((id,index)=><View key={`${id}-${index}`} style={{width:104,gap:4}}>{previews[index]?<Image source={{uri:previews[index]}} style={{width:104,height:104,borderRadius:10,backgroundColor:colors.card}} resizeMode="contain"/>:<View style={{width:104,height:104,borderRadius:10,backgroundColor:colors.card,alignItems:'center',justifyContent:'center'}}><Text style={[type.small,{color:colors.secondary}]}>Image attached</Text></View>}<Button small title="Remove" variant="ghost" onPress={()=>removeImage(index)}/></View>)}</ScrollView>:<Text style={[type.small,{color:colors.secondary}]}>No product photos added yet. You can add photos using the button above.</Text>}
       <TextField label="Price (₹) *" value={form.price} onChangeText={v=>setForm({...form,price:v})} keyboardType="decimal-pad"/>
       <TextField label="Discounted price (₹)" value={form.discountedPrice} onChangeText={v=>setForm({...form,discountedPrice:v})} keyboardType="decimal-pad"/>
       <TextField label="Stock quantity *" value={form.stockQuantity} onChangeText={v=>setForm({...form,stockQuantity:v})} keyboardType="number-pad"/>
