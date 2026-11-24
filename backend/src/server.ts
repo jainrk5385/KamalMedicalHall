@@ -26,6 +26,7 @@ import { chatAdmin, chatRouter } from './routes/chat.js';
 import { adminExtras, exportDownload, reviewsRouter } from './routes/extras.js';
 import { otpRouter } from './otp.js';
 import { announcementsAdmin, announcementsPublic } from './routes/announcements.js';
+import { productsAdmin, productsPublic } from './routes/products.js';
 import { shopAdmin, shopPublic } from './routes/shop.js';
 import { accountRouter, customersAdmin } from './routes/customers.js';
 import { smsAdmin } from './routes/sms.js';
@@ -79,10 +80,12 @@ export function createApp() {
   // Public routes.
   app.use('/', shopPublic);
   app.use('/', announcementsPublic);
+  app.use('/', productsPublic);
 
   // Admin routes.
   app.use('/admin', shopAdmin);
   app.use('/admin', announcementsAdmin);
+  app.use('/admin', productsAdmin);
   app.use('/admin', smsAdmin);
   app.use('/admin', customersAdmin);
   app.use('/admin', adminRouter);
