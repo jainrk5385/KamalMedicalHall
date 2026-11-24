@@ -798,6 +798,7 @@ export function MoreScreen(_p: BottomTabScreenProps<AdminTabParamList, 'More'>) 
       <ScrollView contentContainerStyle={[s.pad, useContentStyle()]} showsVerticalScrollIndicator={false}>
         <Enter index={0}><View style={s.me}><Avatar name={user?.name} size={56} /><View><Text style={[type.h3, { color: colors.text }]}>{user?.name}</Text><Text style={[type.small, { color: colors.secondary }]}>+91 {user?.phone}</Text></View></View></Enter>
         {row('notifications-outline', t('admin.notifications'), () => nav.navigate('Notifications'))}
+        {row('pricetag-outline', 'Product catalogue', () => nav.navigate('ProductCatalog'))}
         {row('chatbubbles-outline', t('admin.chats'), () => nav.navigate('AdminChats'))}
         {row('star-outline', t('admin.reviews'), () => nav.navigate('AdminReviews'))}
         {row('bar-chart-outline', t('admin.revenue'), () => nav.navigate('Revenue'))}
