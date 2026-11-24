@@ -1,4 +1,6 @@
-import { model, models, Schema } from 'mongoose';
+import mongoose from 'mongoose';
+
+const { Schema } = mongoose;
 
 const productSchema = new Schema({
   name: { type: String, required: true, trim: true, maxlength: 120 },
@@ -11,4 +13,7 @@ const productSchema = new Schema({
 }, { timestamps: true });
 
 productSchema.index({ isAvailable: 1, name: 1 });
-export const Product = models.Product || model('Product', productSchema);
+
+export const Product =
+  mongoose.models.Product ||
+  mongoose.model('Product', productSchema);
