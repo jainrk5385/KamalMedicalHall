@@ -450,6 +450,7 @@ general.post('/uploads/sign', authed, (req, res) => {
         'review',
         'proof',
         'announcement',
+        'product',
       ]).default('prescription'),
     }),
     req.body ?? {},
@@ -462,7 +463,7 @@ general.post('/uploads/sign', authed, (req, res) => {
       ? role === 'admin'
       : purpose === 'proof'
         ? role === 'delivery_partner'
-        : purpose === 'announcement'
+        : purpose === 'announcement' || purpose === 'product'
           ? role === 'admin'
           : purpose === 'avatar'
             ? true
