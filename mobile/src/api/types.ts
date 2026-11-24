@@ -172,6 +172,7 @@ export interface Product {
   name: string;
   description: string;
   images: string[];
+  imagePublicIds?: string[];
   price: number;
   discountedPrice: number | null;
   stockQuantity: number;
