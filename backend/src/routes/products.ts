@@ -64,6 +64,10 @@ productsAdmin.patch('/products/:id', async (req, res) => {
   const current = await Product.findById(req.params.id);
   if (!current) throw notFound('Product not found');
 
+  // A product must always retain at least one image, including partial updates.
+  const nextImages = b.images ?? current.images ?? [];
+  if (nextImages.length < 1) throw new HttpError(422, 'validation_error', 'At least one product image is required.');
+
   // Validate the effective values, including fields omitted from this PATCH.
   const nextPrice = b.price ?? current.price;
   const nextDiscountedPrice = Object.prototype.hasOwnProperty.call(b, 'discountedPrice')
