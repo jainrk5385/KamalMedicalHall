@@ -12,6 +12,8 @@ import { CashScreen } from '../screens/admin/CashScreen';
 import { ShopDetailsScreen } from '../screens/admin/ShopDetails';
 import { SmsSettingsScreen } from '../screens/admin/SmsSettings';
 import { ShopScreen } from '../screens/customer/ShopScreen';
+import { ProductsScreen, ProductDetailScreen } from '../screens/customer/ProductsScreens';
+import { ProductCatalogScreen } from '../screens/admin/ProductCatalogScreen';
 import { AccountStatusScreen, DeactivatedScreen } from '../screens/customer/AccountScreens';
 import { AnnouncementScreen } from '../screens/customer/AnnouncementScreen';
 import { AnnouncementsScreen } from '../screens/admin/AdminAnnouncements';
@@ -107,6 +109,7 @@ function CustomerTabs() {
   return (
     <CTabs.Navigator screenOptions={tabOptions}>
       <CTabs.Screen name="Home" component={HomeScreen} options={{ title: t('tabs.home'), tabBarIcon: tabIcon('home-outline', 'home') }} />
+      <CTabs.Screen name="Products" component={ProductsScreen} options={{ title: "Products", tabBarIcon: tabIcon('pricetag-outline', 'pricetag') }} />
       <CTabs.Screen name="Orders" component={OrdersScreen} options={{ title: t('tabs.orders'), tabBarIcon: tabIcon('document-text-outline', 'document-text') }} />
       <CTabs.Screen name="Cart" component={CartScreen} options={{ title: t('tabs.cart'), tabBarBadge: count || undefined, tabBarIcon: tabIcon('cart-outline', 'cart') }} />
       <CTabs.Screen name="Profile" component={ProfileScreen} options={{ title: t('tabs.profile'), tabBarIcon: tabIcon('person-outline', 'person') }} />
@@ -134,6 +137,7 @@ function CustomerNavigator() {
       <CStack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: t('profile.edit') }} />
       <CStack.Screen name="Language" component={LanguageScreen} options={{ title: t('profile.language') }} />
       <CStack.Screen name="Help" component={HelpScreen} options={{ title: t('profile.help') }} />
+      <CStack.Screen name="ProductDetail" component={ProductDetailScreen} options={{ title: "Product details" }} />
       <CStack.Screen name="Shop" component={ShopScreen} options={{ title: t('shop.title') }} />
       <CStack.Screen name="Announcement" component={AnnouncementScreen} options={{ title: t('ann.detailTitle') }} />
       <CStack.Screen name="Legal" component={LegalScreen} options={{ title: t('legal.title') }} />
@@ -192,6 +196,7 @@ function AdminNavigator() {
       <AStack.Screen name="StoreSettings" component={StoreSettingsScreen} options={{ title: t('admin.settings') }} />
       <AStack.Screen name="Language" component={LanguageScreen} options={{ title: t('profile.language') }} />
       <AStack.Screen name="Notifications" component={NotificationsScreen} options={{ title: t('admin.notifications') }} />
+      <AStack.Screen name="ProductCatalog" component={ProductCatalogScreen} options={{ title: "Product catalogue" }} />
       <AStack.Screen name="SmsSettings" component={SmsSettingsScreen} options={{ title: t('sms.title') }} />
     </AStack.Navigator>
   );
