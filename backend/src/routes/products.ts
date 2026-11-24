@@ -57,7 +57,6 @@ productsAdmin.patch('/products/:id', async (req, res) => {
   if (b.images?.some(id => !id.startsWith(`products/${req.user!.id}/`) || isBlockedFile(id))) throw new HttpError(400, 'invalid_file', 'Invalid product image.');
   if (b.price != null && b.discountedPrice != null && b.discountedPrice > b.price)
     throw new HttpError(422, 'validation_error', 'Discounted price cannot exceed regular price.');
-  }
   const p = await Product.findByIdAndUpdate(req.params.id, { $set: b }, { new: true, runValidators: true });
   if (!p) throw notFound('Product not found');
   res.json({ product: view(p) });
