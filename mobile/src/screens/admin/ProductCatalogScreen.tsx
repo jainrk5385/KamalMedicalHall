@@ -79,7 +79,7 @@ export function ProductCatalogScreen() {
       <View style={{flexDirection:'row',gap:12,alignItems:'center'}}>{p.images[0]?<Image source={{uri:p.images[0]}} style={{width:64,height:64,borderRadius:10}} resizeMode="contain"/>:null}<View style={{flex:1,gap:4}}><Text style={[type.bodyMedium,{color:colors.text}]}>{p.name}</Text><Text style={[type.small,{color:colors.secondary}]}>₹{p.discountedPrice??p.price} · Stock {p.stockQuantity} · {p.isAvailable?'Available':'Unavailable'}</Text></View></View>
       <ButtonRow><Button small variant="outline" title="Edit" onPress={()=>edit(p)}/><Button small variant="danger" title="Delete" onPress={()=>{void remove(p);}}/></ButtonRow>
     </Card>)}
-    {showForm?<Card style={{gap:10,marginTop:spacing.sm}}>
+    {showForm?<Card style={{gap:10,marginTop:spacing.lg}}>
       <Text style={[type.h3,{color:colors.text}]}>{editing?'Edit product':'Add product'}</Text>
       <TextField label="Product name *" value={form.name} onChangeText={v=>setForm({...form,name:v})}/>
       <TextField label="Description" value={form.description} onChangeText={v=>setForm({...form,description:v})} multiline/>
