@@ -5,7 +5,7 @@ const { Schema } = mongoose;
 const productSchema = new Schema({
   name: { type: String, required: true, trim: true, maxlength: 120 },
   description: { type: String, default: '', maxlength: 3000 },
-  images: { type: [String], default: [] },
+  images: { type: [String], default: [], validate: { validator: (images: string[]) => images.length >= 1, message: 'At least one product image is required.' } },
   price: { type: Number, required: true, min: 0 },
   discountedPrice: { type: Number, min: 0, default: null },
   stockQuantity: { type: Number, required: true, min: 0, default: 0 },
