@@ -7,7 +7,7 @@ import { endpoints } from '../../api/endpoints';
 import type { Product } from '../../api/types';
 import { useLoad, useErrorPopup } from '../../hooks';
 import { Button, ButtonRow, Card, Message, Screen, TextField } from '../../components/ui';
-import { Tap, tick } from '../../components/motion';
+import { tick } from '../../components/motion';
 import { showDialog } from '../../dialog';
 import { colors, spacing, type } from '../../theme';
 
@@ -40,11 +40,11 @@ export function ProductCatalogScreen() {
         const uploaded=await uploadPrescription(file,sig);
         existing.push(uploaded.publicId);
       }
-      setForm({...form,images:existing.join('\\n')});
+      setForm({...form,images:existing.join('\n')});
       tick('success');
     } catch(e){setErr((e as Error).message);} finally {setUploading(false);}
   };
-  const edit=(p:Product)=>{setEditing(p.id);setForm({name:p.name,description:p.description,images:p.images.join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});};
+  const edit=(p:Product)=>{setEditing(p.id);setForm({name:p.name,description:p.description,images:(p.imagePublicIds ?? []).join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});};
   const remove=async(p:Product)=>{const ok=await showDialog({title:'Delete product?',message:`Delete “${p.name}”? This cannot be undone.`,icon:'trash',tone:'danger',confirmLabel:'Delete',cancelLabel:'Cancel'});if(!ok)return;try{await endpoints.admin.deleteProduct(p.id);await reload();tick('success');}catch(e){setErr((e as Error).message);}};
   return <Screen>
     <Text style={[type.h2,{color:colors.text}]}>Product catalogue</Text>
