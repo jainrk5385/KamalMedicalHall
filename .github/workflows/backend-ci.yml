@@ -37,3 +37,22 @@ jobs:
       - name: TypeScript validation
         working-directory: backend
         run: npm run typecheck
+
+  mobile-typecheck:
+    name: Mobile TypeScript Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+      - name: TypeScript validation
+        working-directory: mobile
+        run: npm run typecheck

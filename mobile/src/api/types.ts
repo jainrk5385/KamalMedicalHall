@@ -165,3 +165,18 @@ export interface Announcement {
   isActive: boolean; status: 'active' | 'expired' | 'inactive';
   active: boolean; expired: boolean; hasImages: boolean; images: { publicId: string; mimeType: string; url: string | null; fullUrl: string | null }[];
 }
+
+
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  images: string[];
+  imagePublicIds?: string[];
+  price: number;
+  discountedPrice: number | null;
+  stockQuantity: number;
+  isAvailable: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
