@@ -50,6 +50,7 @@ import type {
   StoreSettings,
   Terms,
   Tracking,
+  Product,
   User,
 } from './types';
 
@@ -86,6 +87,8 @@ export interface NewOrderInput {
 }
 
 export const endpoints = {
+  products: () => api<{ products: Product[] }>('GET', '/products'),
+  product: (id: string) => api<{ product: Product }>('GET', `/products/${id}`),
   config: () =>
     api<StoreConfig>('GET', '/config', undefined, { auth: false }),
 
@@ -371,6 +374,11 @@ export const endpoints = {
     ),
 
   admin: {
+    products: () => api<{ products: Product[] }>('GET', '/admin/products'),
+    createProduct: (b: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => api<{ product: Product }>('POST', '/admin/products', b),
+    updateProduct: (id: string, b: Partial<Omit<Product, 'id' | 'createdAt' | 'updatedAt'>>) => api<{ product: Product }>('PATCH', `/admin/products/${id}`, b),
+    deleteProduct: (id: string) => api<void>('DELETE', `/admin/products/${id}`),
+
     overview: () =>
       api<Overview>('GET', '/admin/overview'),
 
