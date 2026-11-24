@@ -1,4 +1,4 @@
-import { model, models, Schema, type InferSchemaType } from 'mongoose';
+import { model, models, Schema } from 'mongoose';
 
 const productSchema = new Schema({
   name: { type: String, required: true, trim: true, maxlength: 120 },
@@ -11,5 +11,4 @@ const productSchema = new Schema({
 }, { timestamps: true });
 
 productSchema.index({ isAvailable: 1, name: 1 });
-export type IProduct = InferSchemaType<typeof productSchema>;
-export const Product = (models.Product as ReturnType<typeof model<IProduct>>) || model<IProduct>('Product', productSchema);
+export const Product = models.Product || model('Product', productSchema);
