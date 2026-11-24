@@ -169,7 +169,8 @@ export const endpoints = {
       | 'avatar'
       | 'review'
       | 'proof'
-      | 'announcement' = 'prescription'
+      | 'announcement'
+      | 'product' = 'prescription'
   ) =>
     api<UploadSignature>(
       'POST',
