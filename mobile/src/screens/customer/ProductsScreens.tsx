@@ -9,7 +9,8 @@ import { colors, radius, spacing, type } from '../../theme';
 import type { CustomerStackParamList } from '../../navigation/types';
 
 const money = (n: number) => '₹' + n.toLocaleString('en-IN');
-export function ProductsScreen() {\n  const navigation = useNavigation<NativeStackNavigationProp<CustomerStackParamList>>();
+export function ProductsScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<CustomerStackParamList>>();
   const { data, error, loading, reload } = useLoad(() => endpoints.products());
   return <ScrollView contentContainerStyle={s.body} refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={reload} />}>
     <Text style={[type.h2,{color:colors.text}]}>Products</Text>
