@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, Text, View } from 'react-native';
+import { Image, ScrollView, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadPrescription } from '../../api/upload';
 import type { PrescriptionFile } from '../../store/cart';
@@ -18,13 +18,14 @@ export function ProductCatalogScreen() {
   const [editing,setEditing]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);
   const [uploading,setUploading]=useState(false);
+  const [previews,setPreviews]=useState<string[]>([]);
   const [err,setErr]=useState(''); useErrorPopup(err);
   const save=async()=>{
     const price=Number(form.price), stockQuantity=Number(form.stockQuantity), discountedPrice=form.discountedPrice.trim()?Number(form.discountedPrice):null;
     if(!form.name.trim()||!Number.isFinite(price)||price<0||!Number.isInteger(stockQuantity)||stockQuantity<0||(discountedPrice!==null&&(!Number.isFinite(discountedPrice)||discountedPrice<0||discountedPrice>price))){setErr('Please check product name, price, discount and stock quantity.');return;}
     const payload={name:form.name.trim(),description:form.description.trim(),images:form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean),price,discountedPrice,stockQuantity,isAvailable:form.isAvailable};
     setBusy(true);setErr('');
-    try{if(editing)await endpoints.admin.updateProduct(editing,payload);else await endpoints.admin.createProduct(payload);setForm(blank);setEditing(null);tick('success');await reload();}catch(e){setErr((e as Error).message);}finally{setBusy(false);}
+    try{if(editing)await endpoints.admin.updateProduct(editing,payload);else await endpoints.admin.createProduct(payload);setForm(blank);setPreviews([]);setEditing(null);tick('success');await reload();}catch(e){setErr((e as Error).message);}finally{setBusy(false);}
   };
   const addImages=async()=>{
     setErr('');
@@ -33,18 +34,29 @@ export function ProductCatalogScreen() {
       if(result.canceled||!result.assets?.length)return;
       setUploading(true);
       const existing=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
+      const nextPreviews=[...previews];
       for(const asset of result.assets){
         if(existing.length>=8)break;
         const file:PrescriptionFile={id:`${Date.now()}-${existing.length}`,uri:asset.uri,name:asset.fileName??'product.jpg',mimeType:asset.mimeType?.startsWith('image/')?asset.mimeType:'image/jpeg',sizeBytes:asset.fileSize ?? undefined};
         const sig=await endpoints.signUpload('product');
         const uploaded=await uploadPrescription(file,sig);
         existing.push(uploaded.publicId);
+        nextPreviews.push(uploaded.url || file.uri);
       }
       setForm({...form,images:existing.join('\n')});
+      setPreviews(nextPreviews);
       tick('success');
     } catch(e){setErr((e as Error).message);} finally {setUploading(false);}
   };
-  const edit=(p:Product)=>{setEditing(p.id);setForm({name:p.name,description:p.description,images:(p.imagePublicIds ?? []).join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});};
+  const edit=(p:Product)=>{setEditing(p.id);setPreviews(p.images ?? []);setForm({name:p.name,description:p.description,images:(p.imagePublicIds ?? []).join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});};
+  const removeImage=(index:number)=>{
+    const imageIds=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
+    imageIds.splice(index,1);
+    const nextPreviews=[...previews];
+    nextPreviews.splice(index,1);
+    setForm({...form,images:imageIds.join('\n')});
+    setPreviews(nextPreviews);
+  };
   const remove=async(p:Product)=>{const ok=await showDialog({title:'Delete product?',message:`Delete “${p.name}”? This cannot be undone.`,icon:'trash',tone:'danger',confirmLabel:'Delete',cancelLabel:'Cancel'});if(!ok)return;try{await endpoints.admin.deleteProduct(p.id);await reload();tick('success');}catch(e){setErr((e as Error).message);}};
   return <Screen>
     <Text style={[type.h2,{color:colors.text}]}>Product catalogue</Text>
@@ -53,12 +65,14 @@ export function ProductCatalogScreen() {
       <Text style={[type.h3,{color:colors.text}]}>{editing?'Edit product':'Add product'}</Text>
       <TextField label="Product name *" value={form.name} onChangeText={v=>setForm({...form,name:v})}/>
       <TextField label="Description" value={form.description} onChangeText={v=>setForm({...form,description:v})} multiline/>
-      <Text style={[type.small,{color:colors.secondary}]}>Product photos ({form.images.split(/\\n|,/).filter(Boolean).length}/8)</Text>\n      <Button title={uploading?"Uploading images…":"Choose product photos"} icon="images" variant="outline" loading={uploading} onPress={()=>{void addImages();}} disabled={uploading}/>
+      <Text style={[type.small,{color:colors.secondary}]}>Product photos ({form.images.split(/\n|,/).filter(Boolean).length}/8)</Text>
+      <Button title={uploading?"Uploading images…":"Choose product photos"} icon="images" variant="outline" loading={uploading} onPress={()=>{void addImages();}} disabled={uploading}/>
+      {previews.length>0?<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:10,paddingVertical:4}}>{previews.map((uri,index)=><View key={`${uri}-${index}`} style={{width:104,gap:4}}><Image source={{uri}} style={{width:104,height:104,borderRadius:10,backgroundColor:colors.card}} resizeMode="contain"/><Button small title="Remove" variant="ghost" onPress={()=>removeImage(index)}/></View>)}</ScrollView>:null}
       <TextField label="Price (₹) *" value={form.price} onChangeText={v=>setForm({...form,price:v})} keyboardType="decimal-pad"/>
       <TextField label="Discounted price (₹)" value={form.discountedPrice} onChangeText={v=>setForm({...form,discountedPrice:v})} keyboardType="decimal-pad"/>
       <TextField label="Stock quantity *" value={form.stockQuantity} onChangeText={v=>setForm({...form,stockQuantity:v})} keyboardType="number-pad"/>
       <ButtonRow><Button title={form.isAvailable?'Available':'Unavailable'} variant="outline" onPress={()=>setForm({...form,isAvailable:!form.isAvailable})}/><Button title={busy?'Saving…':editing?'Update product':'Save product'} loading={busy} onPress={()=>{void save();}}/></ButtonRow>
-      {editing?<Button title="Cancel editing" variant="ghost" onPress={()=>{setEditing(null);setForm(blank);}}/>:null}
+      {editing?<Button title="Cancel editing" variant="ghost" onPress={()=>{setEditing(null);setForm(blank);setPreviews([]);}}/>:null}
     </Card>
     <Text style={[type.h3,{color:colors.text,marginTop:spacing.lg}]}>All products ({data?.products.length??0})</Text>
     {loading&&!data?<Text>Loading…</Text>:error&&!data?<Text>{error}</Text>:!data?.products.length?<Message icon="cube-outline" title="No products added yet"/>:data.products.map(p=><Card key={p.id} style={{gap:8}}>
