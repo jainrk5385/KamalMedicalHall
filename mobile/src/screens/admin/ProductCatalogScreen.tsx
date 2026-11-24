@@ -12,6 +12,7 @@ import { showDialog } from '../../dialog';
 import { colors, spacing, type } from '../../theme';
 
 const blank = { name:'', description:'', images:'', price:'', discountedPrice:'', stockQuantity:'0', isAvailable:true };
+const parseImageIds = (value:string) => value.split(/[\\n,]/).map(id=>id.trim()).filter(id=>id.length>0 && id.startsWith('products/'));
 export function ProductCatalogScreen() {
   const {data,reload,loading,error}=useLoad(()=>endpoints.admin.products());
   const [form,setForm]=useState(blank);
@@ -24,7 +25,7 @@ export function ProductCatalogScreen() {
   const imageIds=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
   const save=async()=>{
     const price=Number(form.price), stockQuantity=Number(form.stockQuantity), discountedPrice=form.discountedPrice.trim()?Number(form.discountedPrice):null;
-    if(!form.name.trim()||!Number.isFinite(price)||price<0||!Number.isInteger(stockQuantity)||stockQuantity<0||(discountedPrice!==null&&(!Number.isFinite(discountedPrice)||discountedPrice<0||discountedPrice>price))){setErr('Please check product name, price, discount and stock quantity.');return;}
+    if(imageIds.length===0){setErr('At least one product image is required. Please add a product photo.');return;}\n    if(!form.name.trim()||!Number.isFinite(price)||price<0||!Number.isInteger(stockQuantity)||stockQuantity<0||(discountedPrice!==null&&(!Number.isFinite(discountedPrice)||discountedPrice<0||discountedPrice>price))){setErr('Please check product name, price, discount and stock quantity.');return;}
     const isEditing=Boolean(editing);
     const payload={name:form.name.trim(),description:form.description.trim(),images:form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean),price,discountedPrice,stockQuantity,isAvailable:form.isAvailable};
     setBusy(true);setErr('');
@@ -58,7 +59,7 @@ export function ProductCatalogScreen() {
       tick('success');
     } catch(e){setErr((e as Error).message);} finally {setUploading(false);}
   };
-  const edit=(p:Product)=>{const ids=(p.imagePublicIds ?? []).filter(id=>typeof id==='string'&&id.trim().length>0);setEditing(p.id);setPreviews(ids.map((_,i)=>p.images?.[i] ?? ''));setForm({name:p.name,description:p.description,images:ids.join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});setShowForm(true);};
+  const edit=(p:Product)=>{const ids=parseImageIds((p.imagePublicIds ?? []).join('\\n'));setEditing(p.id);setPreviews(ids.map((_,i)=>p.images?.[i] ?? ''));setForm({name:p.name,description:p.description,images:ids.join('\n'),price:String(p.price),discountedPrice:p.discountedPrice==null?'':String(p.discountedPrice),stockQuantity:String(p.stockQuantity),isAvailable:p.isAvailable});setShowForm(true);};
   const removeImage=(index:number)=>{
     const imageIds=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
     imageIds.splice(index,1);
