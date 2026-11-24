@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authed, requireRole } from '../auth.js';
 import { HttpError, notFound, parse } from '../http.js';
 import { Product } from '../models/Product.js';
+import { isBlockedFile, signedPrescriptionUrl } from '../services.js';
 
 export const productsPublic = Router();
 export const productsAdmin = Router();
@@ -12,7 +13,7 @@ const idValid = (id: string) => mongoose.Types.ObjectId.isValid(id);
 const productInput = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(3000).default(''),
-  images: z.array(z.string().url().max(1000)).max(8).default([]),
+  images: z.array(z.string().min(3).max(300)).max(8).default([]),
   price: z.number().finite().min(0).max(10000000),
   discountedPrice: z.number().finite().min(0).max(10000000).nullable().optional(),
   stockQuantity: z.number().int().min(0).max(1000000),
@@ -22,7 +23,8 @@ const productInput = z.object({
 });
 const view = (p: any) => ({
   id: String(p._id), name: p.name, description: p.description ?? '',
-  images: p.images ?? [], price: p.price, discountedPrice: p.discountedPrice ?? null,
+  images: (p.images ?? []).map((id: string) => signedPrescriptionUrl(id, 'image', 'image')).filter(Boolean),
+  imagePublicIds: p.images ?? [], price: p.price, discountedPrice: p.discountedPrice ?? null,
   stockQuantity: p.stockQuantity ?? 0, isAvailable: p.isAvailable !== false,
   createdAt: p.createdAt, updatedAt: p.updatedAt,
 });
@@ -45,13 +47,15 @@ productsAdmin.get('/products', async (_req, res) => {
 });
 productsAdmin.post('/products', async (req, res) => {
   const b = parse(productInput, req.body);
+  if (b.images.some(id => !id.startsWith(`products/${req.user!.id}/`) || isBlockedFile(id))) throw new HttpError(400, 'invalid_file', 'Invalid product image.');
   const p = await Product.create({ ...b, discountedPrice: b.discountedPrice ?? null });
   res.status(201).json({ product: view(p) });
 });
 productsAdmin.patch('/products/:id', async (req, res) => {
   if (!idValid(String(req.params.id))) throw notFound('Product not found');
   const b = parse(productInput.partial(), req.body);
-  if (b.price != null && b.discountedPrice != null && b.discountedPrice > b.price) {
+  if (b.images?.some(id => !id.startsWith(`products/${req.user!.id}/`) || isBlockedFile(id))) throw new HttpError(400, 'invalid_file', 'Invalid product image.');
+  if (b.price != null && b.discountedPrice != null && b.discountedPrice > b.price)
     throw new HttpError(422, 'validation_error', 'Discounted price cannot exceed regular price.');
   }
   const p = await Product.findByIdAndUpdate(req.params.id, { $set: b }, { new: true, runValidators: true });
