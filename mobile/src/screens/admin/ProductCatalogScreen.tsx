@@ -21,7 +21,7 @@ export function ProductCatalogScreen() {
   const [previews,setPreviews]=useState<string[]>([]);
   const [showForm,setShowForm]=useState(false);
   const [err,setErr]=useState(''); useErrorPopup(err);
-  const imageIds=form.images.split(/\\n|,/).map(x=>x.trim()).filter(Boolean);
+  const imageIds=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
   const save=async()=>{
     const price=Number(form.price), stockQuantity=Number(form.stockQuantity), discountedPrice=form.discountedPrice.trim()?Number(form.discountedPrice):null;
     if(!form.name.trim()||!Number.isFinite(price)||price<0||!Number.isInteger(stockQuantity)||stockQuantity<0||(discountedPrice!==null&&(!Number.isFinite(discountedPrice)||discountedPrice<0||discountedPrice>price))){setErr('Please check product name, price, discount and stock quantity.');return;}
