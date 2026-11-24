@@ -1,5 +1,6 @@
 import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { endpoints } from '../../api/endpoints';
 import type { Product } from '../../api/types';
 import { useLoad } from '../../hooks';
@@ -8,7 +9,7 @@ import { colors, radius, spacing, type } from '../../theme';
 import type { CustomerStackParamList } from '../../navigation/types';
 
 const money = (n: number) => '₹' + n.toLocaleString('en-IN');
-export function ProductsScreen({ navigation }: NativeStackScreenProps<CustomerStackParamList, 'Products'>) {
+export function ProductsScreen() {\n  const navigation = useNavigation<NativeStackNavigationProp<CustomerStackParamList>>();
   const { data, error, loading, reload } = useLoad(() => endpoints.products());
   return <ScrollView contentContainerStyle={s.body} refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={reload} />}>
     <Text style={[type.h2,{color:colors.text}]}>Products</Text>
