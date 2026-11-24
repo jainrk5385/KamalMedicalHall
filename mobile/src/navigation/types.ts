@@ -14,12 +14,13 @@ OTP: {
   Legal: undefined;
 };
 
-export type CustomerTabParamList = { Home: undefined; Orders: undefined; Cart: undefined; Profile: undefined };
+export type CustomerTabParamList = { Home: undefined; Products: undefined; Orders: undefined; Cart: undefined; Profile: undefined };
 export type CustomerStackParamList = {
   Tabs: NavigatorScreenParams<CustomerTabParamList> | undefined;
   Upload: undefined;
   TypeMedicines: undefined;
   Shop: undefined;
+  ProductDetail: { productId: string };
   Announcement: { id: string };
   Addresses: { select?: boolean } | undefined;
   AddressForm: { addressId?: string } | undefined;
@@ -68,6 +69,7 @@ export type AdminStackParamList = {
   Language: undefined;
   Notifications: undefined;
   SmsSettings: undefined;
+  ProductCatalog: undefined;
 };
 
 export type PartnerTabParamList = { Home: undefined; Orders: undefined };
