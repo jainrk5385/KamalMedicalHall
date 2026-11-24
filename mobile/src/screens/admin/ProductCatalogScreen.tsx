@@ -32,7 +32,7 @@ export function ProductCatalogScreen() {
       const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsMultipleSelection:true,selectionLimit:8,quality:0.85});
       if(result.canceled||!result.assets?.length)return;
       setUploading(true);
-      const existing=form.images.split(/\\n|,/).map(x=>x.trim()).filter(Boolean);
+      const existing=form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
       for(const asset of result.assets){
         if(existing.length>=8)break;
         const file:PrescriptionFile={id:`${Date.now()}-${existing.length}`,uri:asset.uri,name:asset.fileName??'product.jpg',mimeType:asset.mimeType?.startsWith('image/')?asset.mimeType:'image/jpeg',sizeBytes:asset.fileSize};
@@ -48,7 +48,7 @@ export function ProductCatalogScreen() {
   const remove=async(p:Product)=>{const ok=await showDialog({title:'Delete product?',message:`Delete “${p.name}”? This cannot be undone.`,icon:'trash',tone:'danger',confirmLabel:'Delete',cancelLabel:'Cancel'});if(!ok)return;try{await endpoints.admin.deleteProduct(p.id);await reload();tick('success');}catch(e){setErr((e as Error).message);}};
   return <Screen>
     <Text style={[type.h2,{color:colors.text}]}>Product catalogue</Text>
-    <Text style={[type.small,{color:colors.secondary}]}>Manage customer-facing products. Add one image URL per line (up to 8). Products are informational only; no cart or checkout.</Text>
+    <Text style={[type.small,{color:colors.secondary}]}>Manage customer-facing products. Upload up to 8 product photos. Products are informational only; no cart or checkout.</Text>
     <Card style={{gap:10}}>
       <Text style={[type.h3,{color:colors.text}]}>{editing?'Edit product':'Add product'}</Text>
       <TextField label="Product name *" value={form.name} onChangeText={v=>setForm({...form,name:v})}/>
