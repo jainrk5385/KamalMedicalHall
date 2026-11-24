@@ -19,13 +19,22 @@ export function ProductCatalogScreen() {
   const [busy,setBusy]=useState(false);
   const [uploading,setUploading]=useState(false);
   const [previews,setPreviews]=useState<string[]>([]);
+  const [showProducts,setShowProducts]=useState(false);
   const [err,setErr]=useState(''); useErrorPopup(err);
   const save=async()=>{
     const price=Number(form.price), stockQuantity=Number(form.stockQuantity), discountedPrice=form.discountedPrice.trim()?Number(form.discountedPrice):null;
     if(!form.name.trim()||!Number.isFinite(price)||price<0||!Number.isInteger(stockQuantity)||stockQuantity<0||(discountedPrice!==null&&(!Number.isFinite(discountedPrice)||discountedPrice<0||discountedPrice>price))){setErr('Please check product name, price, discount and stock quantity.');return;}
+    const isEditing=Boolean(editing);
     const payload={name:form.name.trim(),description:form.description.trim(),images:form.images.split(/\n|,/).map(x=>x.trim()).filter(Boolean),price,discountedPrice,stockQuantity,isAvailable:form.isAvailable};
     setBusy(true);setErr('');
-    try{if(editing)await endpoints.admin.updateProduct(editing,payload);else await endpoints.admin.createProduct(payload);setForm(blank);setPreviews([]);setEditing(null);tick('success');await reload();}catch(e){setErr((e as Error).message);}finally{setBusy(false);}
+    try{
+      if(editing)await endpoints.admin.updateProduct(editing,payload);
+      else await endpoints.admin.createProduct(payload);
+      setForm(blank);setPreviews([]);setEditing(null);setShowProducts(false);
+      tick('success');
+      await reload();
+      await showDialog({title:isEditing?'Product Updated Successfully':'Product Added Successfully',message:isEditing?'The product details have been updated.':'The product has been added successfully.',icon:'check-circle',tone:'success',confirmLabel:'OK'});
+    }catch(e){setErr((e as Error).message);}finally{setBusy(false);}
   };
   const addImages=async()=>{
     setErr('');
@@ -74,10 +83,13 @@ export function ProductCatalogScreen() {
       <ButtonRow><Button title={form.isAvailable?'Available':'Unavailable'} variant="outline" onPress={()=>setForm({...form,isAvailable:!form.isAvailable})}/><Button title={busy?'Saving…':editing?'Update product':'Save product'} loading={busy} onPress={()=>{void save();}}/></ButtonRow>
       {editing?<Button title="Cancel editing" variant="ghost" onPress={()=>{setEditing(null);setForm(blank);setPreviews([]);}}/>:null}
     </Card>
-    <Text style={[type.h3,{color:colors.text,marginTop:spacing.lg}]}>All products ({data?.products.length??0})</Text>
-    {loading&&!data?<Text>Loading…</Text>:error&&!data?<Text>{error}</Text>:!data?.products.length?<Message icon="cube-outline" title="No products added yet"/>:data.products.map(p=><Card key={p.id} style={{gap:8}}>
-      <View style={{flexDirection:'row',gap:10,alignItems:'center'}}>{p.images[0]?<Image source={{uri:p.images[0]}} style={{width:64,height:64,borderRadius:10}}/>:null}<View style={{flex:1}}><Text style={[type.bodyMedium,{color:colors.text}]}>{p.name}</Text><Text style={[type.small,{color:colors.secondary}]}>₹{p.discountedPrice??p.price} · Stock {p.stockQuantity} · {p.isAvailable?'Available':'Unavailable'}</Text></View></View>
-      <ButtonRow><Button small variant="outline" title="Edit" onPress={()=>edit(p)}/><Button small variant="danger" title="Delete" onPress={()=>{void remove(p);}}/></ButtonRow>
-    </Card>)}
+    <Button title={showProducts?'Hide existing products':`Manage existing products (${data?.products.length??0})`} variant="outline" onPress={()=>setShowProducts(value=>!value)}/>
+    {showProducts?<>
+      <Text style={[type.h3,{color:colors.text,marginTop:spacing.sm}]}>Existing products ({data?.products.length??0})</Text>
+      {loading&&!data?<Text>Loading…</Text>:error&&!data?<Text>{error}</Text>:!data?.products.length?<Message icon="cube-outline" title="No products added yet"/>:data.products.map(p=><Card key={p.id} style={{gap:8}}>
+        <View style={{flexDirection:'row',gap:10,alignItems:'center'}}>{p.images[0]?<Image source={{uri:p.images[0]}} style={{width:64,height:64,borderRadius:10}}/>:null}<View style={{flex:1}}><Text style={[type.bodyMedium,{color:colors.text}]}>{p.name}</Text><Text style={[type.small,{color:colors.secondary}]}>₹{p.discountedPrice??p.price} · Stock {p.stockQuantity} · {p.isAvailable?'Available':'Unavailable'}</Text></View></View>
+        <ButtonRow><Button small variant="outline" title="Edit" onPress={()=>edit(p)}/><Button small variant="danger" title="Delete" onPress={()=>{void remove(p);}}/></ButtonRow>
+      </Card>)}
+    </>:null}
   </Screen>;
 }
