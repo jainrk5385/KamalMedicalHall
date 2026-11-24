@@ -13,7 +13,7 @@ const idValid = (id: string) => mongoose.Types.ObjectId.isValid(id);
 const productFields = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(3000).default(''),
-  images: z.array(z.string().min(3).max(300)).max(8).default([]),
+  images: z.array(z.string().min(3).max(300)).min(1, 'At least one product image is required.').max(8),
   price: z.number().finite().min(0).max(10000000),
   discountedPrice: z.number().finite().min(0).max(10000000).nullable().optional(),
   stockQuantity: z.number().int().min(0).max(1000000),
