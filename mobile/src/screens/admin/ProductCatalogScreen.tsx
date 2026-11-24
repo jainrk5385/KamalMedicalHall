@@ -78,7 +78,7 @@ export function ProductCatalogScreen() {
       <Text style={[type.h3,{color:colors.text}]}>{editing?'Edit product':'Add product'}</Text>
       <TextField label="Product name *" value={form.name} onChangeText={v=>setForm({...form,name:v})}/>
       <TextField label="Description" value={form.description} onChangeText={v=>setForm({...form,description:v})} multiline/>
-      <Text style={[type.small,{color:colors.secondary}]}>Product photos ({form.images.split(/\\n|,/).filter(Boolean).length}/8)</Text>
+      <Text style={[type.small,{color:colors.secondary}]}>Product photos ({form.images.split(/\n|,/).filter(Boolean).length}/8)</Text>
       <Button title={uploading?"Uploading images…":"Choose product photos"} icon="images" variant="outline" loading={uploading} onPress={()=>{void addImages();}} disabled={uploading}/>
       {previews.length>0?<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:10,paddingVertical:4}}>{previews.map((uri,index)=><View key={`${uri}-${index}`} style={{width:104,gap:4}}><Image source={{uri}} style={{width:104,height:104,borderRadius:10,backgroundColor:colors.card}} resizeMode="contain"/><Button small title="Remove" variant="ghost" onPress={()=>removeImage(index)}/></View>)}</ScrollView>:null}
       <TextField label="Price (₹) *" value={form.price} onChangeText={v=>setForm({...form,price:v})} keyboardType="decimal-pad"/>
