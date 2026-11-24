@@ -10,8 +10,8 @@ if (cld.cloudName) cloudinary.config({ cloud_name: cld.cloudName, api_key: cld.a
 export function cloudinaryConfigured() { return Boolean(cld.cloudName && cld.apiKey && cld.apiSecret); }
 
 /** Prescriptions are uploaded with type=authenticated, so only signed URLs can read them. */
-export type UploadPurpose = 'prescription' | 'bill' | 'avatar' | 'review' | 'proof' | 'announcement';
-const FOLDERS: Record<UploadPurpose, string> = { prescription: 'prescriptions', bill: 'bills', avatar: 'avatars', review: 'reviews', proof: 'proofs', announcement: 'announcements' };
+export type UploadPurpose = 'prescription' | 'bill' | 'avatar' | 'review' | 'proof' | 'announcement' | 'product';
+const FOLDERS: Record<UploadPurpose, string> = { prescription: 'prescriptions', bill: 'bills', avatar: 'avatars', review: 'reviews', proof: 'proofs', announcement: 'announcements', product: 'products' };
 
 export function signUpload(userId: string, purpose: UploadPurpose = 'prescription') {
   if (!cloudinaryConfigured()) throw new HttpError(503, 'uploads_unavailable', 'File upload is not configured yet');
