@@ -33,7 +33,7 @@ export function ProductCatalogScreen() {
       setForm(blank);setPreviews([]);setEditing(null);setShowForm(false);
       tick('success');
       await reload();
-      await showDialog({title:isEditing?'Product Updated Successfully':'Product Added Successfully',message:isEditing?'The product details have been updated.':'The product has been added successfully.',icon:'check-circle',tone:'success',confirmLabel:'OK'});
+      await showDialog({title:isEditing?'Product Updated Successfully':'Product Added Successfully',message:isEditing?'The product details have been updated.':'The product has been added successfully.',icon:'checkmark-circle',confirmLabel:'OK'});
     }catch(e){setErr((e as Error).message);}finally{setBusy(false);}
   };
   const addImages=async()=>{
