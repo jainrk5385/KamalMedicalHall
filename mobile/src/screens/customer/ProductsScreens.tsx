@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { endpoints } from '../../api/endpoints';
