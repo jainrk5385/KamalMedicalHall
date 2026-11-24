@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { Image, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { endpoints } from '../../api/endpoints';
@@ -34,19 +35,21 @@ export function ProductDetailScreen({ route }: NativeStackScreenProps<CustomerSt
   const p=data?.product;
   const galleryRef=useRef<ScrollView>(null);
   const [activeImage,setActiveImage]=useState(0);
+  const activeImageRef=useRef(0);
   useEffect(()=>{
+    activeImageRef.current=0;
     setActiveImage(0);
     if(!p||p.images.length<2)return;
-    let nextIndex=0;
     const timer=setInterval(()=>{
-      nextIndex=(nextIndex+1)%p.images.length;
-      setActiveImage(nextIndex);
-      galleryRef.current?.scrollTo({x:nextIndex*detailImageWidth,animated:true});
+      activeImageRef.current=(activeImageRef.current+1)%p.images.length;
+      setActiveImage(activeImageRef.current);
+      galleryRef.current?.scrollTo({x:activeImageRef.current*detailImageWidth,animated:true});
     },3000);
     return ()=>clearInterval(timer);
   },[p?.id,p?.images?.length,detailImageWidth]);
   const onGalleryScrollEnd=(event:NativeSyntheticEvent<NativeScrollEvent>)=>{
     const index=Math.round(event.nativeEvent.contentOffset.x/detailImageWidth);
+    activeImageRef.current=index;
     setActiveImage(index);
   };
   if(loading&&!p)return <Screen><Text>Loading product…</Text></Screen>;
